@@ -1,0 +1,13 @@
+@use 'variables' as *;
+@use 'reset';
+
+#app {
+  min-height: 100vh;
+}
+
+// 页面容器
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: $spacing-lg;
+}
