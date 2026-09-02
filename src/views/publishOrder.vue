@@ -9,7 +9,7 @@ const successMsg = ref('')
 const goodsTypeOptions = ['建材', '钢铁', '煤炭', '其他']
 
 const form = reactive({
-  // 货物信息
+  // ghhh货物信息kkk
   goodsType: '',
   goodsTypeCustom: '',
   goodsDescription: '',
