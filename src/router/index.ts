@@ -13,7 +13,19 @@ const router = createRouter({
       path: '/publishOrder',
       name: 'publishOrder',
       component: () => import('@/views/publishOrder.vue'),
-      meta: { requiresAuth: true },
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
+      path: '/publishOrderList',
+      name: 'publishOrderList',
+      component: () => import('@/views/publishOrderList.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
+      path: '/carrierAcceptOrder',
+      name: 'carrierAcceptOrder',
+      component: () => import('@/views/carrierAcceptOrder.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
     },
     {
       path: '/',

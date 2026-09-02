@@ -107,7 +107,7 @@ async function handleLogin() {
       localStorage.setItem('userInfo', JSON.stringify(userInfo))
     }
     // 跳转到来源页面，默认进入发布订单页
-    const redirect = (route.query.redirect as string) || '/publishOrder'
+    const redirect = (route.query.redirect as string) || '/publishOrderList'
     router.push(redirect)
   } catch (err) {
     errorMsg.value = getErrorMessage(err)

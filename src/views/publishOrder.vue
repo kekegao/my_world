@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { publishOrder } from '@/api/modules/order'
 
+const router = useRouter()
 const loading = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+
+/** 返回我的订单列表 */
+function goOrderList() {
+  router.push('/publishOrderList')
+}
 
 const goodsTypeOptions = ['建材', '钢铁', '煤炭', '其他']
 
@@ -179,57 +186,89 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="publish-page page-container">
-    <div class="page-header">
-      <h2>发布订单</h2>
-      <p>填写货物与运输信息，快速发布物流订单</p>
-    </div>
+  <div class="order-app">
+    <!-- 顶部导航 -->
+    <header class="top-bar">
+      <button type="button" class="back-btn" aria-label="返回" @click="goOrderList">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <span class="top-title">发布订单</span>
+      <span class="top-right"></span>
+    </header>
 
-    <form class="publish-card" @submit.prevent="handleSubmit">
+    <!-- 表单主体 -->
+    <form class="publish-body" @submit.prevent="handleSubmit">
       <!-- 货物信息 -->
-      <section class="form-section">
-        <h3 class="section-title">货物信息</h3>
-        <div class="form-grid form-grid-3">
-          <div class="form-item">
-            <label>物品类型</label>
-            <select v-model="form.goodsType" class="form-input">
-              <option value="" disabled>请选择物品类型</option>
-              <option v-for="opt in goodsTypeOptions" :key="opt" :value="opt">{{ opt }}</option>
-            </select>
-            <input
-              v-if="form.goodsType === '其他'"
-              v-model="form.goodsTypeCustom"
-              class="form-input"
-              type="text"
-              maxlength="20"
-              placeholder="请输入物品类型"
-            />
-          </div>
-          <div class="form-item">
-            <label>物品重量（吨）</label>
-            <input
-              v-model="form.goodsWeight"
-              class="form-input"
-              type="number"
-              min="0"
-              step="0.1"
-              placeholder="请输入物品重量"
-            />
-          </div>
-          <div class="form-item">
-            <label>运费（元）</label>
-            <input
-              v-model="form.transportMoney"
-              class="form-input"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="请输入运费"
-            />
+      <section class="form-card">
+        <h3 class="card-title">
+          <span>货物信息</span>
+          <small>填写货物类型、重量与运费</small>
+        </h3>
+
+        <div class="form-field">
+          <span class="field-label">物品类型</span>
+          <div class="type-chips">
+            <button
+              v-for="opt in goodsTypeOptions"
+              :key="opt"
+              type="button"
+              class="type-chip"
+              :class="{ active: form.goodsType === opt }"
+              @click="form.goodsType = opt"
+            >
+              {{ opt }}
+            </button>
           </div>
         </div>
-        <div class="form-item">
-          <label>物品描述</label>
+
+        <div v-if="form.goodsType === '其他'" class="form-field">
+          <span class="field-label">自定义物品类型</span>
+          <input
+            v-model="form.goodsTypeCustom"
+            class="form-input"
+            type="text"
+            maxlength="20"
+            placeholder="请输入物品类型"
+          />
+        </div>
+
+        <div class="half-grid">
+          <div class="form-field">
+            <span class="field-label">物品重量</span>
+            <div class="input-box">
+              <input
+                v-model="form.goodsWeight"
+                class="form-input"
+                type="number"
+                min="0"
+                step="0.1"
+                inputmode="decimal"
+                placeholder="0"
+              />
+              <span class="input-suffix">吨</span>
+            </div>
+          </div>
+          <div class="form-field">
+            <span class="field-label">运费</span>
+            <div class="input-box">
+              <input
+                v-model="form.transportMoney"
+                class="form-input"
+                type="number"
+                min="0"
+                step="0.01"
+                inputmode="decimal"
+                placeholder="0"
+              />
+              <span class="input-suffix">元</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-field">
+          <span class="field-label">物品描述</span>
           <textarea
             v-model="form.goodsDescription"
             class="form-input form-textarea"
@@ -241,181 +280,260 @@ async function handleSubmit() {
       </section>
 
       <!-- 发货地址 -->
-      <section class="form-section">
-        <h3 class="section-title">发货地址</h3>
-        <div class="form-grid form-grid-3">
-          <div class="form-item">
-            <label>省份</label>
-            <input v-model="form.shipperProvince" class="form-input" type="text" maxlength="20" placeholder="如：广东省" />
+      <section class="form-card">
+        <h3 class="card-title">
+          <span>发货地址</span>
+          <small>货物从哪里发出</small>
+        </h3>
+        <div class="region-grid">
+          <div class="form-field">
+            <span class="field-label">省份</span>
+            <input v-model="form.shipperProvince" class="form-input" type="text" maxlength="20" placeholder="广东省" />
           </div>
-          <div class="form-item">
-            <label>城市</label>
-            <input v-model="form.shipperCity" class="form-input" type="text" maxlength="20" placeholder="如：深圳市" />
+          <div class="form-field">
+            <span class="field-label">城市</span>
+            <input v-model="form.shipperCity" class="form-input" type="text" maxlength="20" placeholder="深圳市" />
           </div>
-          <div class="form-item">
-            <label>区县</label>
-            <input v-model="form.shipperArea" class="form-input" type="text" maxlength="20" placeholder="如：南山区" />
+          <div class="form-field">
+            <span class="field-label">区县</span>
+            <input v-model="form.shipperArea" class="form-input" type="text" maxlength="20" placeholder="南山区" />
           </div>
         </div>
-        <div class="form-item">
-          <label>详细地址</label>
+        <div class="form-field">
+          <span class="field-label">详细地址</span>
           <input
             v-model="form.shipperAddress"
             class="form-input"
             type="text"
             maxlength="100"
-            placeholder="请输入详细发货地址"
+            placeholder="街道、门牌号、园区等"
           />
         </div>
       </section>
 
       <!-- 收货地址 -->
-      <section class="form-section">
-        <h3 class="section-title">收货地址</h3>
-        <div class="form-grid form-grid-3">
-          <div class="form-item">
-            <label>省份</label>
-            <input v-model="form.carrierProvince" class="form-input" type="text" maxlength="20" placeholder="如：广东省" />
+      <section class="form-card">
+        <h3 class="card-title">
+          <span>收货地址</span>
+          <small>货物要送到哪里</small>
+        </h3>
+        <div class="region-grid">
+          <div class="form-field">
+            <span class="field-label">省份</span>
+            <input v-model="form.carrierProvince" class="form-input" type="text" maxlength="20" placeholder="广东省" />
           </div>
-          <div class="form-item">
-            <label>城市</label>
-            <input v-model="form.carrierCity" class="form-input" type="text" maxlength="20" placeholder="如：深圳市" />
+          <div class="form-field">
+            <span class="field-label">城市</span>
+            <input v-model="form.carrierCity" class="form-input" type="text" maxlength="20" placeholder="深圳市" />
           </div>
-          <div class="form-item">
-            <label>区县</label>
-            <input v-model="form.carrierArea" class="form-input" type="text" maxlength="20" placeholder="如：南山区" />
+          <div class="form-field">
+            <span class="field-label">区县</span>
+            <input v-model="form.carrierArea" class="form-input" type="text" maxlength="20" placeholder="南山区" />
           </div>
         </div>
-        <div class="form-item">
-          <label>详细地址</label>
+        <div class="form-field">
+          <span class="field-label">详细地址</span>
           <input
             v-model="form.carrierAddress"
             class="form-input"
             type="text"
             maxlength="100"
-            placeholder="请输入详细收货地址"
+            placeholder="街道、门牌号、园区等"
           />
         </div>
       </section>
 
       <!-- 货主信息 -->
-      <section class="form-section">
-        <h3 class="section-title">货主信息</h3>
-        <div class="form-grid">
-          <div class="form-item">
-            <label>货主名称</label>
+      <section class="form-card">
+        <h3 class="card-title">
+          <span>货主信息</span>
+          <small>已自动带出，可修改</small>
+        </h3>
+        <div class="half-grid">
+          <div class="form-field">
+            <span class="field-label">货主名称</span>
             <input v-model="form.shipperName" class="form-input" type="text" maxlength="30" placeholder="货主名称" />
           </div>
-          <div class="form-item">
-            <label>货主手机号</label>
-            <input v-model="form.shipperMobile" class="form-input" type="text" maxlength="11" placeholder="货主手机号" />
+          <div class="form-field">
+            <span class="field-label">货主手机号</span>
+            <input
+              v-model="form.shipperMobile"
+              class="form-input"
+              type="tel"
+              inputmode="numeric"
+              maxlength="11"
+              placeholder="货主手机号"
+            />
           </div>
         </div>
       </section>
 
       <!-- 承运方信息（选填） -->
-      <section class="form-section">
-        <h3 class="section-title">承运方信息（选填）</h3>
-        <div class="form-grid">
-          <div class="form-item">
-            <label>承运方名称</label>
+      <section class="form-card">
+        <h3 class="card-title">
+          <span>承运方信息</span>
+          <small>选填</small>
+        </h3>
+        <div class="half-grid">
+          <div class="form-field">
+            <span class="field-label">承运方名称</span>
             <input v-model="form.carrierName" class="form-input" type="text" maxlength="30" placeholder="承运方名称" />
           </div>
-          <div class="form-item">
-            <label>承运方手机号</label>
-            <input v-model="form.carrierMobile" class="form-input" type="text" maxlength="11" placeholder="承运方手机号" />
+          <div class="form-field">
+            <span class="field-label">承运方手机号</span>
+            <input
+              v-model="form.carrierMobile"
+              class="form-input"
+              type="tel"
+              inputmode="numeric"
+              maxlength="11"
+              placeholder="承运方手机号"
+            />
           </div>
         </div>
       </section>
 
-      <p v-if="errorMsg" class="form-tip error">{{ errorMsg }}</p>
-      <p v-if="successMsg" class="form-tip success">{{ successMsg }}</p>
-
-      <div class="form-actions">
-        <button class="submit-btn" type="submit" :disabled="loading">
-          {{ loading ? '发布中...' : '发布订单' }}
-        </button>
+      <!-- 提示信息 -->
+      <div v-if="errorMsg" class="form-banner error">{{ errorMsg }}</div>
+      <div v-if="successMsg" class="form-banner success">
+        {{ successMsg }}
+        <button type="button" class="banner-link" @click="goOrderList">去查看我的订单 ›</button>
       </div>
+
+      <!-- 底部提交栏 -->
+      <footer class="submit-bar">
+        <button class="submit-btn" type="submit" :disabled="loading">
+          {{ loading ? '发布中…' : '发布订单' }}
+        </button>
+      </footer>
     </form>
   </div>
 </template>
 
 <style lang="scss" scoped>
-.publish-page {
-  max-width: 720px;
-  padding-bottom: $spacing-2xl;
+.order-app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: $bg-page;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.06);
 }
 
-.page-header {
-  margin-bottom: $spacing-lg;
+/* ===== 顶部导航 ===== */
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 52px;
+  padding: 0 $spacing-md;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: $bg-card;
+  border-bottom: 1px solid $border-color;
+}
 
-  h2 {
-    font-size: $font-size-xl;
+.back-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  color: $text-primary;
+  transition: $transition-base;
+
+  svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  &:active {
+    background: $bg-page;
+  }
+}
+
+.top-title {
+  font-size: $font-size-lg;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.top-right {
+  width: 36px;
+}
+
+/* ===== 表单主体 ===== */
+.publish-body {
+  padding: $spacing-md $spacing-md 96px;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.form-card {
+  background: $bg-card;
+  border-radius: $radius-lg;
+  padding: $spacing-md;
+  box-shadow: $shadow-sm;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.card-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  position: relative;
+  padding-left: 12px;
+
+  span {
+    font-size: $font-size-base;
     font-weight: 700;
     color: $text-primary;
   }
 
-  p {
-    margin-top: $spacing-xs;
-    font-size: $font-size-sm;
-    color: $text-secondary;
+  small {
+    font-size: $font-size-xs;
+    color: $text-muted;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 14px;
+    border-radius: 2px;
+    background: $color-primary;
   }
 }
 
-.publish-card {
+.form-field {
   display: flex;
   flex-direction: column;
-  gap: $spacing-lg;
+  gap: 6px;
+  min-width: 0;
 }
 
-.form-section {
-  background: $bg-card;
-  border: 1px solid $border-color;
-  border-radius: $radius-lg;
-  padding: $spacing-lg;
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-md;
-}
-
-.section-title {
-  font-size: $font-size-base;
-  font-weight: 600;
-  color: $text-primary;
-  padding-bottom: $spacing-sm;
-  border-bottom: 1px solid $border-color;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: $spacing-md;
-}
-
-.form-grid-3 {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.form-item {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-xs;
-
-  label {
-    font-size: $font-size-sm;
-    color: $text-primary;
-  }
+.field-label {
+  font-size: $font-size-sm;
+  color: $text-secondary;
 }
 
 .form-input {
   width: 100%;
-  height: 40px;
+  height: 44px;
   padding: 0 $spacing-md;
-  border: 1px solid $border-color;
+  border: 1px solid transparent;
   border-radius: $radius-md;
   font-size: $font-size-sm;
   color: $text-primary;
-  background: $bg-card;
+  background: $bg-page;
   transition: $transition-base;
   box-sizing: border-box;
 
@@ -425,24 +543,82 @@ async function handleSubmit() {
 
   &:focus {
     outline: none;
+    background: $bg-card;
     border-color: $color-primary;
-    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+    box-shadow: 0 0 0 3px rgba($color-primary, 0.12);
   }
 }
 
 .form-textarea {
   height: auto;
   padding: $spacing-sm $spacing-md;
-  resize: vertical;
+  resize: none;
   font-family: inherit;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-.form-tip {
+/* 物品类型选择 */
+.type-chips {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $spacing-sm;
+}
+
+.type-chip {
+  height: 40px;
+  border-radius: $radius-full;
+  background: $bg-page;
+  color: $text-secondary;
   font-size: $font-size-sm;
-  text-align: center;
-  border-radius: $radius-md;
+  transition: $transition-base;
+
+  &.active {
+    background: rgba($color-primary, 0.12);
+    color: $color-primary;
+    font-weight: 600;
+  }
+}
+
+/* 双列 / 省市区 */
+.half-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: $spacing-sm;
+}
+
+.region-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $spacing-sm;
+}
+
+.input-box {
+  position: relative;
+
+  .form-input {
+    padding-right: 44px;
+  }
+}
+
+.input-suffix {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: $font-size-sm;
+  color: $text-muted;
+}
+
+/* 提示条 */
+.form-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
   padding: $spacing-sm $spacing-md;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  line-height: 1.5;
 
   &.error {
     color: $color-danger;
@@ -455,37 +631,47 @@ async function handleSubmit() {
   }
 }
 
-.form-actions {
-  text-align: center;
+.banner-link {
+  flex-shrink: 0;
+  color: $color-primary;
+  font-weight: 600;
+}
+
+/* ===== 底部提交栏 ===== */
+.submit-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  z-index: 30;
+  width: min(480px, 100vw);
+  padding: $spacing-sm $spacing-md;
+  padding-bottom: calc(#{$spacing-sm} + env(safe-area-inset-bottom));
+  background: rgba($bg-card, 0.94);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid $border-color;
 }
 
 .submit-btn {
-  min-width: 200px;
-  height: 44px;
+  width: 100%;
+  height: 46px;
   border: none;
-  border-radius: $radius-md;
-  background: $color-primary;
+  border-radius: $radius-full;
+  background: linear-gradient(135deg, $color-primary 0%, $color-primary-hover 100%);
   color: #fff;
   font-size: $font-size-base;
   font-weight: 600;
-  letter-spacing: 4px;
-  cursor: pointer;
+  letter-spacing: 2px;
+  box-shadow: $shadow-md;
   transition: $transition-base;
 
-  &:hover:not(:disabled) {
-    background: $color-primary-hover;
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: $shadow-sm;
   }
 
   &:disabled {
     opacity: 0.6;
-    cursor: not-allowed;
-  }
-}
-
-@media (max-width: 640px) {
-  .form-grid,
-  .form-grid-3 {
-    grid-template-columns: 1fr;
   }
 }
 </style>
