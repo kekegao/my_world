@@ -46,6 +46,12 @@ const router = createRouter({
       meta: { layout: 'blank', requiresAuth: true },
     },
     {
+      path: '/bankList',
+      name: 'bankList',
+      component: () => import('@/views/bankList.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
       path: '/',
       redirect: '/login',
     },

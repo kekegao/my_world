@@ -66,6 +66,11 @@ function goWithdraw() {
   router.push('/withdraw')
 }
 
+/** 跳转银行卡管理页 */
+function goBankList() {
+  router.push('/bankList')
+}
+
 /** 打开冻结金额明细 */
 function openFrozenDetail() {
   view.value = 'frozen'
@@ -147,6 +152,24 @@ function closeFrozenDetail() {
               </svg>
             </button>
             <p class="detail-tip">冻结金额为进行中运单的运费托管及提现处理中的款项，点击可查看明细</p>
+          </section>
+
+          <!-- 银行卡管理入口 -->
+          <section class="entry-card" role="button" tabindex="0" @click="goBankList" @keydown.enter="goBankList">
+            <div class="entry-icon entry-icon-bank">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="2.5" y="5" width="19" height="14" rx="2" stroke="currentColor" stroke-width="1.6" />
+                <path d="M2.5 10.5h19" stroke="currentColor" stroke-width="1.6" />
+                <path d="M6.5 15h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div class="entry-text">
+              <b>银行卡管理</b>
+              <span>管理提现到账的银行卡</span>
+            </div>
+            <svg class="entry-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
           </section>
 
           <!-- 我的运单入口 -->
@@ -520,6 +543,12 @@ function closeFrozenDetail() {
     width: 24px;
     height: 24px;
   }
+}
+
+/* 银行卡管理入口图标（暖金色调，与订单入口区分） */
+.entry-icon-bank {
+  background: rgba($color-warning, 0.12);
+  color: $color-warning;
 }
 
 .entry-text {

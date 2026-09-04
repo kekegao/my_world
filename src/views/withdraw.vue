@@ -9,20 +9,24 @@ import {
   withdraw,
   type AccountBalance,
 } from '@/utils/account'
+import { bankOption, cardTail, loadBankCards, type BankCard } from '@/utils/bankCard'
 
 const router = useRouter()
 
 /** 当前余额（提现页进入时读取，可提现 = 可用余额） */
 const balance = ref<AccountBalance>(loadAccountBalance())
 
+/** 已绑定的到账银行卡（可在「银行卡管理」中添加 / 删除） */
+const bankCards = ref<BankCard[]>(loadBankCards())
+
+/** 到账账户：默认取第一张已绑定的银行卡 */
+const bankCard = computed<BankCard | null>(() => bankCards.value[0] ?? null)
+
 /** 提现金额（字符串便于输入控制） */
 const amountText = ref('')
 /** 单笔提现限制（元） */
 const MIN_AMOUNT = 1
 const MAX_AMOUNT = 20000
-
-/** 模拟绑定的到账银行卡 */
-const bankCard = { bank: '招商银行', cardType: '储蓄卡', tail: '6821' }
 
 /** 手续费（元，模拟免费）与到账时效 */
 const FEE = 0
@@ -64,7 +68,7 @@ function fillAll() {
 
 /** 模拟提交提现 */
 async function submit() {
-  if (errMsg.value || amountNum.value <= 0 || submitting.value) return
+  if (errMsg.value || amountNum.value <= 0 || submitting.value || !bankCard.value) return
   submitting.value = true
   // 模拟请求耗时
   await new Promise((resolve) => setTimeout(resolve, 800))
@@ -86,6 +90,11 @@ function goBack() {
   } else {
     router.push('/account')
   }
+}
+
+/** 前往银行卡管理页 */
+function goManageBank() {
+  router.push('/bankList')
 }
 </script>
 
@@ -138,21 +147,31 @@ function goBack() {
 
       <!-- 到账账户 -->
       <section class="account-card">
-        <p class="section-label">到账账户</p>
-        <div class="bank-item">
-          <span class="bank-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <rect x="3" y="6" width="18" height="12" rx="2" stroke="#f59e0b" stroke-width="1.6" />
-              <path d="M3 10h18" stroke="#f59e0b" stroke-width="1.6" />
-              <path d="M7 15h4" stroke="#f59e0b" stroke-width="1.6" stroke-linecap="round" />
-            </svg>
-          </span>
-          <span class="bank-info">
-            <b>{{ bankCard.bank }}（{{ bankCard.cardType }}）</b>
-            <span>尾号 {{ bankCard.tail }}</span>
-          </span>
-          <span class="bank-tag">已绑定</span>
-        </div>
+        <p class="section-label">
+          到账账户
+          <button type="button" class="manage-link" @click="goManageBank">管理</button>
+        </p>
+        <template v-if="bankCard">
+          <div class="bank-item">
+            <span
+              class="bank-icon"
+              :style="{ background: `linear-gradient(135deg, ${bankOption(bankCard.bank).from}, ${bankOption(bankCard.bank).to})` }"
+            >
+              {{ bankCard.bank.charAt(0) }}
+            </span>
+            <span class="bank-info">
+              <b>{{ bankCard.bank }}（{{ bankCard.cardType }}）</b>
+              <span>尾号 {{ cardTail(bankCard.cardNo) }}</span>
+            </span>
+            <span class="bank-tag">已绑定</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="bank-empty">
+            <p>暂未绑定到账银行卡，请先完成绑卡</p>
+            <button type="button" class="bank-empty-btn" @click="goManageBank">去银行卡管理绑定</button>
+          </div>
+        </template>
         <p class="arrive-row">{{ ARRIVE_TEXT }} · 申请提交后资金将暂时冻结</p>
       </section>
 
@@ -167,7 +186,7 @@ function goBack() {
       <button
         type="button"
         class="submit-btn"
-        :disabled="submitting || successAmount > 0"
+        :disabled="submitting || successAmount > 0 || !bankCard"
         @click="submit"
       >
         {{ submitting ? '提交中…' : '确认提现' }}
@@ -176,7 +195,7 @@ function goBack() {
 
     <!-- 提现成功弹层 -->
     <Transition name="fade">
-      <div v-if="successAmount > 0" class="success-mask">
+      <div v-if="successAmount > 0 && bankCard" class="success-mask">
         <div class="success-card">
           <span class="success-icon">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -186,7 +205,7 @@ function goBack() {
           <h2 class="success-title">提现申请已提交</h2>
           <p class="success-amount">¥ {{ formatAmount(successAmount) }}</p>
           <p class="success-tip">
-            款项已冻结，{{ ARRIVE_TEXT }}至{{ bankCard.bank }}（尾号 {{ bankCard.tail }}）
+            款项已冻结，{{ ARRIVE_TEXT }}至{{ bankCard.bank }}（尾号 {{ cardTail(bankCard.cardNo) }}）
           </p>
           <button type="button" class="success-btn" @click="done">完成</button>
         </div>
@@ -259,9 +278,27 @@ function goBack() {
 
 .section-label {
   margin-bottom: $spacing-md;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: $font-size-sm;
   font-weight: 600;
   color: $text-primary;
+}
+
+.manage-link {
+  height: 26px;
+  padding: 0 $spacing-sm;
+  border: 1px solid $border-color;
+  border-radius: $radius-full;
+  background: $bg-page;
+  color: $text-secondary;
+  font-size: $font-size-xs;
+  transition: $transition-base;
+
+  &:active {
+    opacity: 0.75;
+  }
 }
 
 /* 可提现余额 */
@@ -402,12 +439,9 @@ function goBack() {
   align-items: center;
   justify-content: center;
   border-radius: $radius-md;
-  background: rgba($color-warning, 0.12);
-
-  svg {
-    width: 26px;
-    height: 26px;
-  }
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .bank-info {
@@ -435,6 +469,39 @@ function goBack() {
   color: $color-success;
   font-size: $font-size-xs;
   font-weight: 600;
+}
+
+/* 未绑定银行卡提示 */
+.bank-empty {
+  padding: $spacing-md;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $spacing-sm;
+  border: 1px dashed $border-color;
+  border-radius: $radius-md;
+  background: $bg-page;
+
+  p {
+    font-size: $font-size-sm;
+    color: $text-secondary;
+  }
+}
+
+.bank-empty-btn {
+  height: 32px;
+  padding: 0 $spacing-md;
+  border: none;
+  border-radius: $radius-full;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #fff;
+  font-size: $font-size-xs;
+  font-weight: 600;
+  transition: $transition-base;
+
+  &:active {
+    opacity: 0.85;
+  }
 }
 
 .arrive-row {
