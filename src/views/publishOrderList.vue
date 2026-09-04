@@ -248,6 +248,18 @@ function closeDetail() {
   nextTick(() => window.scrollTo({ top: 0 }))
 }
 
+/**
+ * 返回上一页：从「我的」账户页进入时原路退回；
+ * 无历史记录（如登录后直达）时回到账户页，与账户页「我的运单」入口形成联动。
+ */
+function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/account')
+  }
+}
+
 /** 跳转到发布订单页 */
 function goPublish() {
   router.push('/publishOrder')
@@ -259,8 +271,13 @@ function goPublish() {
     <!-- ======= 列表页 ======= -->
     <Transition name="page" mode="out-in">
       <div v-if="!currentOrder" key="list" class="page-list">
-        <!-- 顶部导航 -->
+        <!-- 顶部导航：返回账户 + 标题 + 发布 -->
         <header class="top-bar">
+          <button type="button" class="back-btn" aria-label="返回" @click="goBack">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
           <span class="top-title">我的订单</span>
           <button class="top-action" type="button" @click="goPublish">＋ 发布</button>
         </header>
