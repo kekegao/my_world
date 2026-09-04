@@ -271,7 +271,7 @@ function goPublish() {
     <!-- ======= 列表页 ======= -->
     <Transition name="page" mode="out-in">
       <div v-if="!currentOrder" key="list" class="page-list">
-        <!-- 顶部导航：返回账户 + 标题 + 发布 -->
+        <!-- 顶部导航：返回账户 + 标题（移到右上角原发布按钮位置） -->
         <header class="top-bar">
           <button type="button" class="back-btn" aria-label="返回" @click="goBack">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -279,14 +279,16 @@ function goPublish() {
             </svg>
           </button>
           <span class="top-title">我的订单</span>
-          <button class="top-action" type="button" @click="goPublish">＋ 发布</button>
         </header>
 
-        <!-- 统计卡片 -->
+        <!-- 统计卡片：已发布订单，发布按钮置于卡片右上角 -->
         <section class="stats-card">
-          <div class="stats-main">
-            <span class="stats-label">已发布订单</span>
-            <strong class="stats-num">{{ stats.total }}</strong>
+          <div class="stats-head">
+            <div class="stats-main">
+              <span class="stats-label">已发布订单</span>
+              <strong class="stats-num">{{ stats.total }}</strong>
+            </div>
+            <button class="stats-publish" type="button" @click="goPublish">＋ 发布</button>
           </div>
           <div class="stats-grid">
             <div class="stats-item">
@@ -375,7 +377,7 @@ function goPublish() {
               <path d="M6 16 10 6h30" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <p class="empty-title">暂无相关订单</p>
-            <p class="empty-tip">切换到其他状态，或点击右上角发布新订单</p>
+            <p class="empty-tip">切换到其他状态，或点击卡片上的「发布」按钮发布新订单</p>
           </div>
         </main>
       </div>
@@ -549,31 +551,21 @@ function goPublish() {
   color: $text-primary;
 }
 
-.top-action {
-  height: 30px;
-  padding: 0 $spacing-md;
-  border-radius: $radius-full;
-  background: $color-primary;
-  color: #fff;
-  font-size: $font-size-sm;
-  transition: $transition-base;
-
-  &:active {
-    background: $color-primary-hover;
-  }
-}
-
 /* ===== 统计卡片 ===== */
 .stats-card {
   margin: $spacing-md;
   padding: $spacing-md $spacing-lg;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   border-radius: $radius-lg;
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: #fff;
   box-shadow: $shadow-md;
+}
+
+.stats-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-sm;
 }
 
 .stats-main {
@@ -587,18 +579,41 @@ function goPublish() {
 }
 
 .stats-num {
-  font-size: 34px;
+  font-size: 32px;
   font-weight: 700;
   line-height: 1.2;
 }
 
+/* 卡片右上角的发布按钮（白色半透明胶囊） */
+.stats-publish {
+  height: 30px;
+  padding: 0 $spacing-md;
+  display: inline-flex;
+  align-items: center;
+  border-radius: $radius-full;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  transition: $transition-base;
+
+  &:active {
+    background: rgba(255, 255, 255, 0.32);
+  }
+}
+
 .stats-grid {
+  margin-top: $spacing-sm;
+  padding-top: $spacing-sm;
+  border-top: 1px dashed rgba(255, 255, 255, 0.3);
   display: flex;
-  gap: $spacing-lg;
-  padding-right: $spacing-sm;
+  justify-content: space-around;
+  gap: $spacing-sm;
 }
 
 .stats-item {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
