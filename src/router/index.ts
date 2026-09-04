@@ -28,6 +28,24 @@ const router = createRouter({
       meta: { layout: 'blank', requiresAuth: true },
     },
     {
+      path: '/account',
+      name: 'account',
+      component: () => import('@/views/account.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
+      path: '/recharge',
+      name: 'recharge',
+      component: () => import('@/views/recharge.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
+      path: '/withdraw',
+      name: 'withdraw',
+      component: () => import('@/views/withdraw.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
       path: '/',
       redirect: '/login',
     },
