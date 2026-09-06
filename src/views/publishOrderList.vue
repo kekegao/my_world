@@ -1,199 +1,32 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { queryPublishOrderList, type PublishedOrderItem } from '@/api/modules/order'
 
 const router = useRouter()
 
 type OrderStatus = '待接单' | '已接单' | '运输中' | '已完成' | '已取消'
 type TabKey = OrderStatus | '全部'
 
-/** 已发布订单（货主视角） */
-interface PublishedOrder {
-  id: number
-  orderNo: string
-  status: OrderStatus
-  publishTime: string
-  goodsType: string
-  goodsDescription: string
-  /** 物品重量（吨） */
-  goodsWeight: number
-  /** 运费（元），空表示面议 */
-  transportMoney?: number
-  // 发货地址
-  shipperProvince: string
-  shipperCity: string
-  shipperArea: string
-  shipperAddress: string
-  shipperName: string
-  shipperMobile: string
-  // 收货地址
-  carrierProvince: string
-  carrierCity: string
-  carrierArea: string
-  carrierAddress: string
-  // 承运方（选填）
-  carrierName?: string
-  carrierMobile?: string
-}
+/** 货主视角「我的订单」行数据，字段与后端 OrderDto 对齐 */
+type OrderRow = PublishedOrderItem
 
 /**
- * 当前为前端模拟数据，方便直接预览效果；
- * 对接后端时，将 initialOrders 替换为「我的发布」列表接口返回值即可。
+ * 后端 tf_b_order.status：1发布 2摘单 3成交 4发货 5确认收货 6回单确认 7结算申请 8结算 9对账 10发票。
+ * 货主视角将流转状态归并为：待接单 / 已接单 / 运输中 / 已完成。
  */
-const initialOrders: PublishedOrder[] = [
-  {
-    id: 1,
-    orderNo: 'YD20260902001',
-    status: '待接单',
-    publishTime: '2026-09-02 09:32',
-    goodsType: '建材',
-    goodsDescription: '建筑河沙，装车后需覆盖篷布',
-    goodsWeight: 25,
-    transportMoney: 1800,
-    shipperProvince: '广东省',
-    shipperCity: '广州市',
-    shipperArea: '番禺区',
-    shipperAddress: '东环街道兴南路 12 号堆场',
-    shipperName: '张伟',
-    shipperMobile: '13800000001',
-    carrierProvince: '广东省',
-    carrierCity: '深圳市',
-    carrierArea: '宝安区',
-    carrierAddress: '福永街道福园一路 88 号工地',
-    carrierName: '李强',
-    carrierMobile: '13700000001',
-  },
-  {
-    id: 2,
-    orderNo: 'YD20260902002',
-    status: '运输中',
-    publishTime: '2026-09-02 08:15',
-    goodsType: '钢铁',
-    goodsDescription: '螺纹钢 HRB400，约 120 根',
-    goodsWeight: 42,
-    transportMoney: 2600,
-    shipperProvince: '广东省',
-    shipperCity: '佛山市',
-    shipperArea: '顺德区',
-    shipperAddress: '乐从钢铁世界 A 区 6 号仓',
-    shipperName: '王芳',
-    shipperMobile: '13800000002',
-    carrierProvince: '广东省',
-    carrierCity: '东莞市',
-    carrierArea: '长安镇',
-    carrierAddress: '霄边工业区振安中路 100 号',
-    carrierName: '刘涛',
-    carrierMobile: '13700000002',
-  },
-  {
-    id: 3,
-    orderNo: 'YD20260901003',
-    status: '已完成',
-    publishTime: '2026-09-01 16:40',
-    goodsType: '煤炭',
-    goodsDescription: '动力煤，低位发热量 5200 大卡',
-    goodsWeight: 60,
-    transportMoney: 3200,
-    shipperProvince: '广东省',
-    shipperCity: '韶关市',
-    shipperArea: '曲江区',
-    shipperAddress: '乌石镇火车站东侧货场',
-    shipperName: '赵敏',
-    shipperMobile: '13900000003',
-    carrierProvince: '广东省',
-    carrierCity: '惠州市',
-    carrierArea: '惠阳区',
-    carrierAddress: '秋长镇维布工业园仓库',
-    carrierName: '陈浩',
-    carrierMobile: '13700000003',
-  },
-  {
-    id: 4,
-    orderNo: 'YD20260901004',
-    status: '已接单',
-    publishTime: '2026-09-01 10:05',
-    goodsType: '其他',
-    goodsDescription: '日用百货散货，共 12 托',
-    goodsWeight: 3.5,
-    transportMoney: 650,
-    shipperProvince: '广东省',
-    shipperCity: '东莞市',
-    shipperArea: '南城区',
-    shipperAddress: '宏图路 33 号物流园 3 号库',
-    shipperName: '孙丽',
-    shipperMobile: '13800000004',
-    carrierProvince: '广东省',
-    carrierCity: '珠海市',
-    carrierArea: '香洲区',
-    carrierAddress: '南屏科技园屏东二路 6 号',
-    carrierName: '周杰',
-    carrierMobile: '13700000004',
-  },
-  {
-    id: 5,
-    orderNo: 'YD20260901005',
-    status: '待接单',
-    publishTime: '2026-09-01 09:18',
-    goodsType: '建材',
-    goodsDescription: '袋装水泥 P.O 42.5，800 包',
-    goodsWeight: 40,
-    transportMoney: 2200,
-    shipperProvince: '广东省',
-    shipperCity: '肇庆市',
-    shipperArea: '四会市',
-    shipperAddress: '大沙镇陶瓷城西门装卸点',
-    shipperName: '吴涛',
-    shipperMobile: '13900000005',
-    carrierProvince: '广东省',
-    carrierCity: '广州市',
-    carrierArea: '白云区',
-    carrierAddress: '太和镇大源北路 150 号工地',
-  },
-  {
-    id: 6,
-    orderNo: 'YD20260831006',
-    status: '已完成',
-    publishTime: '2026-08-31 15:22',
-    goodsType: '钢铁',
-    goodsDescription: '钢板 Q235B 10mm，30 张',
-    goodsWeight: 32,
-    transportMoney: 2000,
-    shipperProvince: '广东省',
-    shipperCity: '广州市',
-    shipperArea: '黄埔区',
-    shipperAddress: '鱼珠码头金属加工区',
-    shipperName: '郑凯',
-    shipperMobile: '13800000006',
-    carrierProvince: '广东省',
-    carrierCity: '佛山市',
-    carrierArea: '南海区',
-    carrierAddress: '狮山镇小塘工业大道 21 号',
-    carrierName: '黄磊',
-    carrierMobile: '13700000006',
-  },
-  {
-    id: 7,
-    orderNo: 'YD20260831007',
-    status: '已取消',
-    publishTime: '2026-08-31 08:50',
-    goodsType: '煤炭',
-    goodsDescription: '洗精煤，灰分 ≤ 12%',
-    goodsWeight: 58,
-    transportMoney: 3100,
-    shipperProvince: '广东省',
-    shipperCity: '清远市',
-    shipperArea: '清城区',
-    shipperAddress: '源潭镇红杉装卸场',
-    shipperName: '林峰',
-    shipperMobile: '13900000007',
-    carrierProvince: '广东省',
-    carrierCity: '江门市',
-    carrierArea: '台山市',
-    carrierAddress: '台城街道陈宜禧路仓库',
-  },
-]
-
-const orderList = ref<PublishedOrder[]>(initialOrders)
+const STATUS_TEXT: Record<number, OrderStatus> = {
+  1: '待接单', // 发布，等待司机摘单
+  2: '已接单', // 摘单
+  3: '已接单', // 成交
+  4: '运输中', // 发货
+  5: '已完成', // 确认收货
+  6: '已完成', // 回单确认
+  7: '已完成', // 结算申请
+  8: '已完成', // 结算
+  9: '已完成', // 对账
+  10: '已完成', // 发票
+}
 
 /** 状态主题色 */
 const statusTheme: Record<OrderStatus, { color: string; bg: string }> = {
@@ -204,40 +37,136 @@ const statusTheme: Record<OrderStatus, { color: string; bg: string }> = {
   已取消: { color: '#b91c1c', bg: '#fee2e2' },
 }
 
+/** 列表数据与加载状态 */
+const orderList = ref<OrderRow[]>([])
+/** 用于统计卡片的全部订单（与当前 Tab 筛选解耦） */
+const allOrders = ref<OrderRow[]>([])
+const loading = ref(false)
+const loadError = ref('')
+
+/**
+ * 从后端查询当前货主发布的订单列表（POST /api/publishOrder/list）
+ * 完整调用链：
+ * publishOrderList.vue -> ams-app(PublishOrderController) -> order-bsm-biz-service(OrderProtocolImpl)
+ *   -> OrderServiceImpl -> OrderMapper(selectPublishOrderList) -> MyBatis -> tf_b_order 表
+ *
+ * @param statusList 后端 tf_b_order.status 状态集合，undefined/null 表示查询全部
+ */
+async function loadOrders(statusList?: number[]) {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const res = (await queryPublishOrderList({ statusList })) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+      data?: OrderRow[]
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      orderList.value = Array.isArray(res.data) ? res.data : []
+    } else {
+      loadError.value = res?.message || '加载失败，请稍后重试'
+      orderList.value = []
+    }
+  } catch (err) {
+    console.error('加载已发布订单列表失败：', err)
+    loadError.value = '无法连接服务器，请确认 ams-app 后端服务已启动'
+    orderList.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(async () => {
+  await loadOrders()
+  allOrders.value = orderList.value
+})
+
+/** 状态文案：优先按状态码归并，其次取后端状态描述，兜底「其他」 */
+function statusTextOf(order: OrderRow): string {
+  const mapped = order.status != null ? STATUS_TEXT[order.status] : undefined
+  if (mapped) return mapped
+  const desc = order.statusDesc
+  if (desc && ['待接单', '已接单', '运输中', '已完成', '已取消'].includes(desc)) return desc
+  return '其他'
+}
+
+/** 状态徽标样式（未知状态兜底灰色） */
+function badgeStyle(order: OrderRow): { color: string; bg: string } {
+  const theme = statusTheme[statusTextOf(order) as OrderStatus]
+  return theme ?? { color: '#6b7280', bg: '#f3f4f6' }
+}
+
 /** 筛选标签 */
 const tabs: TabKey[] = ['全部', '待接单', '已接单', '运输中', '已完成', '已取消']
 const activeTab = ref<TabKey>('全部')
 
+/**
+ * Tab -> 后端 tf_b_order.status 状态码映射。
+ * null/undefined 表示查询全部；
+ * 已取消目前业务未定义状态码，先用 [-1] 让 IN 查询结果为空，后续有真实取消状态时替换即可。
+ */
+const TAB_STATUS_MAP: Record<TabKey, number[] | null> = {
+  全部: null,
+  待接单: [1],
+  已接单: [2, 3],
+  运输中: [4],
+  已完成: [5, 6, 7, 8, 9, 10],
+  已取消: [-1],
+}
+
+function onTabClick(tab: TabKey) {
+  activeTab.value = tab
+  loadOrders(TAB_STATUS_MAP[tab] ?? undefined)
+}
+
 /** 当前查看详情的订单，null 表示处于列表页 */
-const currentOrder = ref<PublishedOrder | null>(null)
+const currentOrder = ref<OrderRow | null>(null)
 
-const filteredOrders = computed(() =>
-  activeTab.value === '全部' ? orderList.value : orderList.value.filter((o) => o.status === activeTab.value),
-)
-
-/** 顶部统计 */
+/** 顶部统计（基于全部订单，避免切换 Tab 时统计随列表变化） */
 const stats = computed(() => {
-  const list = orderList.value
+  const list = allOrders.value
   return {
     total: list.length,
-    waiting: list.filter((o) => o.status === '待接单').length,
-    ongoing: list.filter((o) => o.status === '已接单' || o.status === '运输中').length,
-    done: list.filter((o) => o.status === '已完成').length,
+    waiting: list.filter((o) => statusTextOf(o) === '待接单').length,
+    ongoing: list.filter((o) => ['已接单', '运输中'].includes(statusTextOf(o))).length,
+    done: list.filter((o) => statusTextOf(o) === '已完成').length,
   }
 })
 
 /** 拼接省市区，过滤空段 */
-function region(province: string, city: string, area: string): string {
+function region(province?: string, city?: string, area?: string): string {
   return [province, city, area].filter(Boolean).join(' ')
 }
 
 /** 运费展示，未填则显示面议 */
-function formatMoney(money?: number): string {
-  return money == null ? '面议' : `¥ ${money}`
+function formatMoney(money?: number | string | null): string {
+  if (money === null || money === undefined || money === '') return '面议'
+  const num = Number(money)
+  return Number.isFinite(num) ? `¥ ${num}` : '面议'
+}
+
+/** 物品重量展示 */
+function weightText(order: OrderRow): string {
+  return order.goodsWeight === null || order.goodsWeight === undefined ? '未填写' : `${order.goodsWeight} 吨`
+}
+
+/** 文本字段空值占位 */
+function displayValue(value?: string | null): string {
+  return value && value.trim() ? value : '—'
+}
+
+/** 将后端 ISO 时间格式化为 yyyy-MM-dd HH:mm */
+function formatTime(time?: string | null): string {
+  if (!time) return ''
+  const date = new Date(time)
+  if (Number.isNaN(date.getTime())) return time
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 /** 打开详情 */
-function openDetail(order: PublishedOrder) {
+function openDetail(order: OrderRow) {
   currentOrder.value = order
   nextTick(() => window.scrollTo({ top: 0 }))
 }
@@ -314,7 +243,7 @@ function goPublish() {
             type="button"
             class="filter-chip"
             :class="{ active: activeTab === tab }"
-            @click="activeTab = tab"
+            @click="onTabClick(tab)"
           >
             {{ tab }}
           </button>
@@ -322,14 +251,14 @@ function goPublish() {
 
         <!-- 订单列表 -->
         <main class="order-list">
-          <p v-if="filteredOrders.length" class="list-count">共 {{ filteredOrders.length }} 条记录</p>
+          <p v-if="orderList.length" class="list-count">共 {{ orderList.length }} 条记录</p>
 
-          <article v-for="order in filteredOrders" :key="order.id" class="order-card">
+          <article v-for="order in orderList" :key="order.id" class="order-card">
             <!-- 顶部：单号 + 状态 -->
             <div class="card-head">
-              <span class="order-no">单号 {{ order.orderNo }}</span>
-              <span class="status-badge" :style="{ color: statusTheme[order.status].color, background: statusTheme[order.status].bg }">
-                {{ order.status }}
+              <span class="order-no">单号 {{ order.orderId }}</span>
+              <span class="status-badge" :style="badgeStyle(order)">
+                {{ statusTextOf(order) }}
               </span>
             </div>
 
@@ -355,20 +284,20 @@ function goPublish() {
 
             <!-- 货物信息 -->
             <div class="goods-row">
-              <span class="goods-chip">{{ order.goodsType }}</span>
-              <span class="goods-meta">重量 {{ order.goodsWeight }} 吨</span>
+              <span class="goods-chip">{{ displayValue(order.goodsType) }}</span>
+              <span class="goods-meta">重量 {{ weightText(order) }}</span>
               <span class="goods-meta goods-fee">{{ formatMoney(order.transportMoney) }}</span>
             </div>
 
             <!-- 底部：时间 + 详情 -->
             <footer class="card-foot">
-              <span class="publish-time">{{ order.publishTime }}</span>
+              <span class="publish-time">{{ formatTime(order.createTime) }}</span>
               <button type="button" class="detail-btn" @click="openDetail(order)">查看详情</button>
             </footer>
           </article>
 
           <!-- 空状态 -->
-          <div v-if="!filteredOrders.length" class="empty-state">
+          <div v-if="!orderList.length" class="empty-state">
             <svg class="empty-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
               <rect x="6" y="16" width="38" height="26" rx="4" fill="#e5e7eb" />
               <path d="M44 26h10a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H46a4 4 0 0 1-4-4v-6a6 6 0 0 0 2-6z" fill="#d1d5db" />
@@ -376,8 +305,21 @@ function goPublish() {
               <circle cx="43" cy="48" r="5" fill="#cbd5e1" />
               <path d="M6 16 10 6h30" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <p class="empty-title">暂无相关订单</p>
-            <p class="empty-tip">切换到其他状态，或点击卡片上的「发布」按钮发布新订单</p>
+            <p class="empty-title">
+              {{ loading ? '加载中…' : loadError ? '加载失败' : '暂无相关订单' }}
+            </p>
+            <p class="empty-tip">
+              {{
+                loading
+                  ? '正在从服务器查询您的发布订单'
+                  : loadError
+                    ? loadError
+                    : '切换到其他状态，或点击卡片上的「发布」按钮发布新订单'
+              }}
+            </p>
+            <button v-if="loadError && !loading" type="button" class="detail-btn empty-retry" @click="() => loadOrders(TAB_STATUS_MAP[activeTab] ?? undefined)">
+              重新加载
+            </button>
           </div>
         </main>
       </div>
@@ -399,10 +341,10 @@ function goPublish() {
             <!-- 状态 + 路线概览 -->
             <section class="detail-hero">
               <div class="hero-head">
-                <span class="status-badge hero-status" :style="{ color: statusTheme[currentOrder.status].color, background: statusTheme[currentOrder.status].bg }">
-                  {{ currentOrder.status }}
+                <span class="status-badge hero-status" :style="badgeStyle(currentOrder)">
+                  {{ statusTextOf(currentOrder) }}
                 </span>
-                <span class="hero-time">{{ currentOrder.publishTime }} 发布</span>
+                <span class="hero-time">{{ formatTime(currentOrder.createTime) }} 发布</span>
               </div>
               <div class="hero-route">
                 <span class="hero-city">{{ currentOrder.shipperCity }}</span>
@@ -414,8 +356,8 @@ function goPublish() {
                 <span class="hero-city">{{ currentOrder.carrierCity }}</span>
               </div>
               <div class="hero-goods">
-                <span>{{ currentOrder.goodsType }}</span>
-                <span>{{ currentOrder.goodsWeight }} 吨</span>
+                <span>{{ displayValue(currentOrder.goodsType) }}</span>
+                <span>{{ weightText(currentOrder) }}</span>
                 <span class="hero-fee">{{ formatMoney(currentOrder.transportMoney) }}</span>
               </div>
             </section>
@@ -455,15 +397,15 @@ function goPublish() {
               <ul class="info-list">
                 <li class="info-item">
                   <span class="info-label">物品类型</span>
-                  <span class="info-value">{{ currentOrder.goodsType }}</span>
+                  <span class="info-value">{{ displayValue(currentOrder.goodsType) }}</span>
                 </li>
                 <li class="info-item">
                   <span class="info-label">物品描述</span>
-                  <span class="info-value">{{ currentOrder.goodsDescription }}</span>
+                  <span class="info-value">{{ displayValue(currentOrder.goodsDescription) }}</span>
                 </li>
                 <li class="info-item">
                   <span class="info-label">物品重量</span>
-                  <span class="info-value">{{ currentOrder.goodsWeight }} 吨</span>
+                  <span class="info-value">{{ weightText(currentOrder) }}</span>
                 </li>
                 <li class="info-item">
                   <span class="info-label">运费</span>
@@ -478,23 +420,23 @@ function goPublish() {
               <ul class="info-list">
                 <li class="info-item">
                   <span class="info-label">订单编号</span>
-                  <span class="info-value">{{ currentOrder.orderNo }}</span>
+                  <span class="info-value">{{ displayValue(currentOrder.orderId) }}</span>
                 </li>
                 <li class="info-item">
                   <span class="info-label">订单状态</span>
-                  <span class="info-value">{{ currentOrder.status }}</span>
+                  <span class="info-value">{{ statusTextOf(currentOrder) }}</span>
                 </li>
                 <li class="info-item">
                   <span class="info-label">发布时间</span>
-                  <span class="info-value">{{ currentOrder.publishTime }}</span>
+                  <span class="info-value">{{ formatTime(currentOrder.createTime) }}</span>
                 </li>
                 <li class="info-item">
                   <span class="info-label">货主</span>
-                  <span class="info-value">{{ currentOrder.shipperName }}</span>
+                  <span class="info-value">{{ displayValue(currentOrder.shipperName) }}</span>
                 </li>
                 <li class="info-item">
                   <span class="info-label">货主电话</span>
-                  <span class="info-value">{{ currentOrder.shipperMobile }}</span>
+                  <span class="info-value">{{ displayValue(currentOrder.shipperMobile) }}</span>
                 </li>
               </ul>
             </section>
@@ -873,6 +815,10 @@ function goPublish() {
   margin-top: $spacing-xs;
   font-size: $font-size-sm;
   color: $text-muted;
+}
+
+.empty-retry {
+  margin-top: $spacing-md;
 }
 
 /* ===== 详情页 ===== */

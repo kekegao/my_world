@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { queryAccountBalance, type AccountBalanceDto } from '@/api/modules/account'
 import {
   formatAmount,
   loadAccountBalance,
   loadFrozenDetails,
+  saveAccountBalance,
   type AccountBalance,
   type FrozenBizType,
   type FrozenDetailItem,
@@ -13,10 +15,63 @@ import {
 const router = useRouter()
 
 /**
- * 账户余额：读取本地模拟存储，与充值 / 提现页共享并联动；
- * 对接后端时改为「账户余额查询」接口返回数据。
+ * 账户余额：默认先取本地模拟值兜底展示，随后通过「账户余额查询」接口
+ * （POST /api/account/balance）拉取 tf_b_account 真实数据覆盖。
  */
 const accountBalance = ref<AccountBalance>(loadAccountBalance())
+/** 余额加载中（首次渲染用本地值兜底，避免闪烁） */
+const balanceLoading = ref(false)
+
+/** 数字转 number，空值返回 0 */
+function toNumber(value?: number | string | null): number {
+  if (value === null || value === undefined || value === '') return 0
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** 后端时间格式化为 yyyy-MM-dd HH:mm（兼容 yyyy-MM-dd HH:mm:ss 与 ISO 格式） */
+function formatBalanceTime(value?: string): string {
+  if (!value) return ''
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/**
+ * 从后端查询当前登录用户的账户余额。
+ * 完整调用链：
+ * account.vue -> ams-app(AccountController.balance) -> account-bsm-biz-service(AccountProtocolImpl.selectAccount)
+ *   -> AccountServiceImpl -> AccountMapper(selectAccount) -> MyBatis -> tf_b_account 表
+ */
+async function syncBalanceFromServer() {
+  balanceLoading.value = true
+  try {
+    const res = (await queryAccountBalance()) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+      data?: AccountBalanceDto | null
+    }
+    if (res && (res.success === true || String(res.code) === '200') && res.data) {
+      const d = res.data
+      accountBalance.value = {
+        total: toNumber(d.balance),
+        available: toNumber(d.availableAmount),
+        frozen: toNumber(d.frozenAmount),
+        updateTime: formatBalanceTime(d.updateTime) || accountBalance.value.updateTime,
+      }
+      // 回写本地，供充值 / 提现页（本地模拟）基于服务端真实余额计算
+      saveAccountBalance(accountBalance.value)
+    }
+  } catch (err) {
+    console.error('加载账户余额失败：', err)
+    // 后端不可用时保留本地兜底数据，不阻塞页面
+  } finally {
+    balanceLoading.value = false
+  }
+}
 
 /** 冻结业务类型主题色 */
 const bizTheme: Record<FrozenBizType, { color: string; bg: string }> = {
@@ -36,10 +91,11 @@ const frozenTotal = computed(() => frozenDetails.value.reduce((sum, item) => sum
 /** 当前展示视图：home 余额主页 / frozen 冻结明细页 */
 const view = ref<'home' | 'frozen'>('home')
 
-/** 页面每次进入时同步最新余额（充值 / 提现返回后数据联动） */
+/** 页面每次进入时同步最新余额（优先取后端真实数据，失败时回落本地兜底） */
 onMounted(() => {
   accountBalance.value = loadAccountBalance()
   frozenDetails.value = loadFrozenDetails()
+  syncBalanceFromServer()
 })
 
 /** 返回上一页，无历史记录时回到我的订单页 */
@@ -129,7 +185,7 @@ function closeFrozenDetail() {
               {{ formatAmount(accountBalance.total) }}
             </p>
 
-            <p class="balance-update">更新于 {{ accountBalance.updateTime }}</p>
+            <p class="balance-update">{{ balanceLoading ? '正在同步账户余额…' : `更新于 ${accountBalance.updateTime}` }}</p>
           </section>
 
           <!-- 余额明细 -->
