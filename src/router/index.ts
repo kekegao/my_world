@@ -16,6 +16,12 @@ const router = createRouter({
       meta: { layout: 'blank', requiresAuth: true },
     },
     {
+      path: '/carrierHomeView',
+      name: 'carrierHomeView',
+      component: () => import('@/views/carrierHomeView.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
       path: '/publishOrder',
       name: 'publishOrder',
       component: () => import('@/views/publishOrder.vue'),
