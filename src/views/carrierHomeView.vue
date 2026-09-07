@@ -30,6 +30,11 @@ function goAcceptOrder() {
   router.push('/carrierAcceptOrder')
 }
 
+/** 跳转我的运单（已摘运单列表） */
+function goMyOrder() {
+  router.push('/carrierOrderList')
+}
+
 /** 跳转银行卡管理 */
 function goBankList() {
   router.push('/bankList')
@@ -120,6 +125,17 @@ onBeforeUnmount(() => window.clearTimeout(tipTimer))
               </svg>
             </span>
             <span class="service-name">银行卡管理</span>
+          </button>
+
+          <button type="button" class="service-item" @click="goMyOrder">
+            <span class="service-icon service-order">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6" />
+                <path d="M7 9h10M7 13h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                <path d="M16.5 17.5l1.5 1.5 2.5-2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <span class="service-name">我的运单</span>
           </button>
 
           <button type="button" class="service-item" @click="showTip">
@@ -319,7 +335,7 @@ onBeforeUnmount(() => window.clearTimeout(tipTimer))
 
 .service-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: $spacing-md $spacing-sm;
 }
 
@@ -357,6 +373,11 @@ onBeforeUnmount(() => window.clearTimeout(tipTimer))
 .service-bank {
   background: rgba($color-primary, 0.1);
   color: $color-primary;
+}
+
+.service-order {
+  background: rgba($color-success, 0.1);
+  color: #059669;
 }
 
 .service-msg {
