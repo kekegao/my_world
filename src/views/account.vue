@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { queryAccountBalance, type AccountBalanceDto } from '@/api/modules/account'
+import { queryAccountBalance, queryFrozenDetailList, type AccountBalanceDto, type FrozenDetailDto } from '@/api/modules/account'
 import {
   formatAmount,
   loadAccountBalance,
@@ -80,10 +80,14 @@ const bizTheme: Record<FrozenBizType, { color: string; bg: string }> = {
 }
 
 /**
- * 冻结明细：读取本地模拟存储（含提现后新增的记录）；
- * 对接后端时改为「冻结明细查询」接口返回数据。
+ * 冻结明细：默认取本地模拟存储兜底展示（含提现后本地新增的记录），
+ * 进入明细页时通过「冻结明细查询」接口实时拉取后端 tf_b_frozen_detail(status=1) 数据覆盖。
  */
 const frozenDetails = ref<FrozenDetailItem[]>(loadFrozenDetails())
+/** 冻结明细加载中 */
+const frozenLoading = ref(false)
+/** 冻结明细加载失败提示（后端不可用时保留本地兜底数据） */
+const frozenError = ref('')
 
 /** 冻结明细合计 */
 const frozenTotal = computed(() => frozenDetails.value.reduce((sum, item) => sum + item.amount, 0))
@@ -97,6 +101,58 @@ onMounted(() => {
   frozenDetails.value = loadFrozenDetails()
   syncBalanceFromServer()
 })
+
+/** 后端冻结业务类型码 → 中文类型（1 运费托管 / 2 提现冻结） */
+function toFrozenBizType(d: FrozenDetailDto): FrozenBizType {
+  if (d.bizTypeName === '运费托管' || d.bizTypeName === '提现冻结') return d.bizTypeName
+  const byCode = d.bizType != null && d.bizType !== '' ? Number(d.bizType) : NaN
+  return byCode === 2 ? '提现冻结' : '运费托管'
+}
+
+/** 后端冻结明细 DTO 转为页面列表项 */
+function toFrozenItem(d: FrozenDetailDto): FrozenDetailItem {
+  const bizType = toFrozenBizType(d)
+  return {
+    id: Number(d.id ?? 0),
+    bizType,
+    orderNo: d.orderNo || '-',
+    amount: toNumber(d.amount),
+    frozenTime: formatBalanceTime(d.frozenTime) || '-',
+    status: d.statusDesc || (bizType === '提现冻结' ? '处理中' : '运输中'),
+  }
+}
+
+/**
+ * 实时查询「冻结中」明细。
+ * 完整调用链：
+ * account.vue -> ams-app(FrozenDetailController.list) -> account-bsm-biz-service(FrozenDetailProtocolImpl)
+ *   -> FrozenDetailServiceImpl -> FrozenDetailMapper(selectFrozenDetailList) -> MyBatis -> tf_b_frozen_detail 表
+ * 后端不可用时保留本地兜底数据并给出提示，不阻塞页面。
+ */
+async function syncFrozenDetailsFromServer() {
+  frozenLoading.value = true
+  frozenError.value = ''
+  try {
+    const res = (await queryFrozenDetailList()) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+      data?: FrozenDetailDto[] | null
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      const list = Array.isArray(res.data) ? res.data : []
+      // 以服务端为准：仅返回「冻结中」记录；为空时展示空状态
+      frozenDetails.value = list.map(toFrozenItem)
+    } else {
+      frozenError.value = res?.message || '查询冻结明细失败，当前展示本地数据'
+    }
+  } catch (err) {
+    console.error('加载冻结明细失败：', err)
+    frozenError.value = '冻结明细接口暂不可用，当前展示本地数据'
+  } finally {
+    frozenLoading.value = false
+  }
+}
 
 /** 返回上一页，无历史记录时回到我的订单页 */
 function goBack() {
@@ -127,9 +183,10 @@ function goBankList() {
   router.push('/bankList')
 }
 
-/** 打开冻结金额明细 */
+/** 打开冻结金额明细：进入即实时查询后端「冻结中」明细 */
 function openFrozenDetail() {
   view.value = 'frozen'
+  syncFrozenDetailsFromServer()
   nextTick(() => window.scrollTo({ top: 0 }))
 }
 
@@ -263,7 +320,17 @@ function closeFrozenDetail() {
             </svg>
           </button>
           <span class="app-title">冻结明细</span>
-          <span class="app-right"></span>
+          <button
+            type="button"
+            class="refresh-btn"
+            aria-label="刷新冻结明细"
+            :disabled="frozenLoading"
+            @click="syncFrozenDetailsFromServer"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
         </header>
 
         <main class="frozen-body">
@@ -276,7 +343,9 @@ function closeFrozenDetail() {
 
           <!-- 冻结明细列表 -->
           <section class="frozen-list">
-            <p v-if="frozenDetails.length" class="list-count">共 {{ frozenDetails.length }} 笔冻结记录</p>
+            <p v-if="frozenLoading" class="list-count frozen-loading">正在同步最新冻结明细…</p>
+            <p v-else-if="frozenDetails.length" class="list-count">共 {{ frozenDetails.length }} 笔冻结记录</p>
+            <p v-if="frozenError" class="sync-error">{{ frozenError }}</p>
 
             <article v-for="item in frozenDetails" :key="item.id" class="frozen-item">
               <span class="biz-badge" :style="{ color: bizTheme[item.bizType].color, background: bizTheme[item.bizType].bg }">
@@ -376,6 +445,31 @@ function closeFrozenDetail() {
 
 .app-right {
   width: 36px;
+}
+
+.refresh-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  color: $text-secondary;
+  transition: $transition-base;
+
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  &:active {
+    background: $bg-page;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
 }
 
 /* ===== 余额主页 ===== */
@@ -720,6 +814,16 @@ function closeFrozenDetail() {
   font-size: $font-size-xs;
   color: $text-muted;
   padding: 0 $spacing-xs;
+}
+
+.frozen-loading {
+  color: $text-secondary;
+}
+
+.sync-error {
+  padding: 0 $spacing-xs;
+  font-size: $font-size-xs;
+  color: $color-danger;
 }
 
 .frozen-item {

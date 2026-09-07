@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { formatAmount, recharge } from '@/utils/account'
+import { submitRecharge, type AccountBalanceDto } from '@/api/modules/account'
+import { formatAmount, recharge as rechargeLocal, saveAccountBalance } from '@/utils/account'
 
 const router = useRouter()
 
@@ -15,6 +16,8 @@ const MAX_AMOUNT = 50000
 /** 提交与成功状态 */
 const submitting = ref(false)
 const successAmount = ref(0)
+/** 接口提交失败提示（与输入校验共用同一错误区） */
+const submitError = ref('')
 
 /** 支付渠道（模拟） */
 const payChannels = [
@@ -53,15 +56,48 @@ function selectQuick(v: number) {
   amountText.value = String(v)
 }
 
-/** 模拟提交充值 */
+/**
+ * 提交充值：调用智运宝账户充值接口（POST /api/account/recharge）。
+ * 完整调用链：
+ * recharge.vue -> ams-app(AccountController.recharge) -> account-bsm-biz-service(AccountRechargeProtocolImpl.recharge)
+ *   -> AccountServiceImpl.increaseBalance（原子累加余额）-> tf_b_account 表
+ * 成功后以服务端返回的最新账户快照回写本地，账户页 / 提现页即时可见。
+ */
 async function submit() {
   if (errMsg.value || amountNum.value <= 0 || submitting.value) return
+  submitError.value = ''
   submitting.value = true
-  // 模拟请求耗时
-  await new Promise((resolve) => setTimeout(resolve, 700))
-  recharge(amountNum.value)
-  submitting.value = false
-  successAmount.value = amountNum.value
+  try {
+    const res = (await submitRecharge(amountNum.value)) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+      data?: AccountBalanceDto | null
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      const d = res.data
+      if (d) {
+        // 服务端返回最新账户快照，直接覆盖本地余额（与账户页字段约定一致）
+        saveAccountBalance({
+          total: Number(d.balance) || 0,
+          available: Number(d.availableAmount) || 0,
+          frozen: Number(d.frozenAmount) || 0,
+          updateTime: d.updateTime || '',
+        })
+      } else {
+        // 服务端未返回快照时兜底：本地余额同步累加
+        rechargeLocal(amountNum.value)
+      }
+      successAmount.value = amountNum.value
+    } else {
+      submitError.value = res?.message || '充值失败，请稍后重试'
+    }
+  } catch (err) {
+    console.error('充值失败：', err)
+    submitError.value = '网络异常，充值未完成，请稍后重试'
+  } finally {
+    submitting.value = false
+  }
 }
 
 /** 完成充值，返回账户页 */
@@ -120,7 +156,7 @@ function goBack() {
           </button>
         </div>
         <p class="amount-tip">单笔充值 ¥0.01 ~ ¥{{ formatAmount(MAX_AMOUNT) }}，请确认金额后再付款</p>
-        <p v-if="errMsg" class="error-text">{{ errMsg }}</p>
+        <p v-if="errMsg || submitError" class="error-text">{{ errMsg || submitError }}</p>
       </section>
 
       <!-- 支付方式 -->
@@ -171,7 +207,7 @@ function goBack() {
       </section>
 
       <!-- 说明 -->
-      <p class="recharge-tip">模拟支付场景：点击「立即充值」后金额到账智运宝账户可用余额，并实时同步账户页。</p>
+      <p class="recharge-tip">所选支付渠道当前仅作展示。点击「立即充值」将发起智运宝账户充值，成功后金额实时到账可用余额，并同步账户页展示。</p>
     </main>
 
     <!-- 底部操作栏 -->
