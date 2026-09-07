@@ -10,6 +10,12 @@ const router = createRouter({
       meta: { layout: 'blank' },
     },
     {
+      path: '/shipperHome',
+      name: 'shipperHome',
+      component: () => import('@/views/shipperHomeView.vue'),
+      meta: { layout: 'blank', requiresAuth: true },
+    },
+    {
       path: '/publishOrder',
       name: 'publishOrder',
       component: () => import('@/views/publishOrder.vue'),

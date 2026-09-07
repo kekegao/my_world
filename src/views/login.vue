@@ -106,9 +106,12 @@ async function handleLogin() {
     if (userInfo && typeof userInfo === 'object') {
       localStorage.setItem('userInfo', JSON.stringify(userInfo))
     }
-    // 跳转到来源页面，默认进入发布订单页
-    const redirect = (route.query.redirect as string) || '/account'
-    router.push(redirect)
+    // 跳转：来源页优先；否则按用户类型进入对应首页
+    // （后端登录返回 LoginResponse.userType：1 货主 → 货主首页 /shipperHome；其余按原有逻辑进入账户页）
+    const redirect = route.query.redirect as string | undefined
+    const rawType = (userInfo as { userType?: number | string } | null | undefined)?.userType
+    const isDriver = rawType !== undefined && rawType !== null && Number(rawType) === 2
+    router.push(redirect || (isDriver ? '/account' : '/shipperHome'))
   } catch (err) {
     errorMsg.value = getErrorMessage(err)
   } finally {

@@ -8,7 +8,16 @@ const loading = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
 
-/** 返回我的订单列表 */
+/** 原路返回上一页；无历史可退时兜底回货主首页 */
+function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/shipperHome')
+  }
+}
+
+/** 发布成功后跳转我的订单列表 */
 function goOrderList() {
   router.push('/publishOrderList')
 }
@@ -189,7 +198,7 @@ async function handleSubmit() {
   <div class="order-app">
     <!-- 顶部导航 -->
     <header class="top-bar">
-      <button type="button" class="back-btn" aria-label="返回" @click="goOrderList">
+      <button type="button" class="back-btn" aria-label="返回" @click="goBack">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
