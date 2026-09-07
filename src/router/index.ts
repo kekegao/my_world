@@ -54,12 +54,7 @@ const router = createRouter({
     {
       path: '/',
       redirect: '/login',
-    },
-    {
-      path: '/about',
-      name: 'about',
-      component: () => import('@/views/AboutView.vue'),
-    },
+    }
   ],
 })
 
