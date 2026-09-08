@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { queryPublishOrderList, type PublishedOrderItem } from '@/api/modules/order'
+import { cancelPublishOrderAccept, dealPublishOrder, queryPublishOrderList, type PublishedOrderItem } from '@/api/modules/order'
 
 const router = useRouter()
 
@@ -81,6 +81,93 @@ onMounted(async () => {
   await loadOrders()
   allOrders.value = orderList.value
 })
+
+/* ===== 已摘单运单：成交 / 取消摘单 ===== */
+
+/** 二次确认弹框操作类型：deal=确认成交，cancel=取消承运方摘单 */
+type ConfirmAction = 'deal' | 'cancel'
+const confirmDialog = ref<{ action: ConfirmAction; order: OrderRow } | null>(null)
+/** 请求进行中标记，防止连点重复提交 */
+const confirming = ref(false)
+
+/** 弹框标题与主按钮文案 */
+const confirmTitle = computed(() => (confirmDialog.value?.action === 'deal' ? '确认成交' : '取消摘单'))
+const confirmBtnText = computed(() => (confirmDialog.value?.action === 'deal' ? '确认成交' : '确认取消'))
+
+/** 弹框提示文案：给出承运方与操作后果 */
+const confirmTip = computed(() => {
+  const d = confirmDialog.value
+  if (!d) return ''
+  const carrier = d.order.carrierName || d.order.carrierUserName || '该承运方'
+  return d.action === 'deal'
+    ? `是否确认与「${carrier}」成交该运单？成交后双方进入履约阶段，运费仍托管于平台。`
+    : `是否取消「${carrier}」的摘单？取消后运单将恢复为待接单，重新进入货源大厅。`
+})
+
+function openConfirm(action: ConfirmAction, order: OrderRow) {
+  confirmDialog.value = { action, order }
+}
+
+function closeConfirm() {
+  if (confirming.value) return
+  confirmDialog.value = null
+}
+
+/** 操作成功后本地同步（覆盖当前列表与统计所用的订单引用） */
+function patchOrderLocal(orderId: string, patch: Partial<OrderRow>) {
+  for (const list of [orderList.value, allOrders.value]) {
+    for (const o of list) {
+      if (o.orderId === orderId) Object.assign(o, patch)
+    }
+  }
+}
+
+/**
+ * 提交二次确认操作：调后端实时成交 / 取消摘单。
+ * POST /api/publishOrder/dealOrder | /api/publishOrder/cancelAccept
+ */
+async function submitConfirm() {
+  const d = confirmDialog.value
+  if (!d || confirming.value) return
+  confirming.value = true
+  try {
+    const api = d.action === 'deal' ? dealPublishOrder : cancelPublishOrderAccept
+    const res = (await api({ orderId: d.order.orderId })) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      if (d.action === 'deal') {
+        patchOrderLocal(d.order.orderId, { status: 3, statusDesc: '成交' })
+        showToast('成交成功，订单进入履约阶段')
+      } else {
+        patchOrderLocal(d.order.orderId, { status: 1, statusDesc: '发布' })
+        showToast('已取消摘单，运单恢复为待接单')
+      }
+      confirmDialog.value = null
+    } else {
+      showToast(res?.message || (d.action === 'deal' ? '成交失败，请稍后重试' : '取消摘单失败，请稍后重试'))
+    }
+  } catch (err) {
+    console.error('成交/取消摘单失败：', err)
+    showToast('网络异常，请稍后重试')
+  } finally {
+    confirming.value = false
+  }
+}
+
+/* ===== 轻提示 ===== */
+const toastMsg = ref('')
+let toastTimer: ReturnType<typeof setTimeout> | undefined
+
+function showToast(msg: string) {
+  toastMsg.value = msg
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toastMsg.value = ''
+  }, 2200)
+}
 
 /** 状态文案：优先按状态码归并，其次取后端状态描述，兜底「其他」 */
 function statusTextOf(order: OrderRow): string {
@@ -289,10 +376,17 @@ function goPublish() {
               <span class="goods-meta goods-fee">{{ formatMoney(order.transportMoney) }}</span>
             </div>
 
-            <!-- 底部：时间 + 详情 -->
+            <!-- 底部：时间 + 操作（已摘单可成交/取消） -->
             <footer class="card-foot">
               <span class="publish-time">{{ formatTime(order.createTime) }}</span>
-              <button type="button" class="detail-btn" @click="openDetail(order)">查看详情</button>
+              <div class="card-actions">
+                <!-- 已摘单(2)：货主可确认成交，或取消承运方摘单恢复发布 -->
+                <template v-if="order.status === 2">
+                  <button type="button" class="op-btn deal-btn" @click="openConfirm('deal', order)">成交</button>
+                  <button type="button" class="op-btn cancel-btn" @click="openConfirm('cancel', order)">取消</button>
+                </template>
+                <button type="button" class="detail-btn" @click="openDetail(order)">查看详情</button>
+              </div>
             </footer>
           </article>
 
@@ -445,6 +539,33 @@ function goPublish() {
           </main>
         </template>
       </div>
+    </Transition>
+
+    <!-- 二次确认弹框：成交 / 取消摘单 -->
+    <div v-if="confirmDialog" class="dialog-mask" @click.self="closeConfirm">
+      <div class="dialog-panel" role="dialog" aria-modal="true">
+        <h3 class="dialog-title">{{ confirmTitle }}</h3>
+        <p class="dialog-tip">{{ confirmTip }}</p>
+        <div class="dialog-actions">
+          <button type="button" class="dialog-btn dialog-cancel" :disabled="confirming" @click="closeConfirm">
+            再想想
+          </button>
+          <button
+            type="button"
+            class="dialog-btn dialog-ok"
+            :class="{ danger: confirmDialog && confirmDialog.action === 'cancel' }"
+            :disabled="confirming"
+            @click="submitConfirm"
+          >
+            {{ confirming ? '处理中…' : confirmBtnText }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 轻提示 -->
+    <Transition name="toast">
+      <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
     </Transition>
   </div>
 </template>
@@ -1069,5 +1190,145 @@ function goPublish() {
   text-align: center;
   font-size: $font-size-xs;
   color: $text-muted;
+}
+
+/* ===== 卡片操作按钮（成交 / 取消 / 查看详情） ===== */
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.op-btn {
+  height: 30px;
+  padding: 0 $spacing-md;
+  border-radius: $radius-full;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  transition: $transition-base;
+}
+
+/* 成交：主色实心，突出正向动作 */
+.deal-btn {
+  background: $color-primary;
+  color: #fff;
+
+  &:active {
+    opacity: 0.85;
+  }
+}
+
+/* 取消：警示色描边，暗示会撤销摘单 */
+.cancel-btn {
+  background: rgba($color-danger, 0.06);
+  border: 1px solid rgba($color-danger, 0.35);
+  color: $color-danger;
+
+  &:active {
+    background: $color-danger;
+    color: #fff;
+  }
+}
+
+/* ===== 二次确认弹框 ===== */
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 $spacing-lg;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dialog-panel {
+  width: 100%;
+  max-width: 320px;
+  padding: $spacing-xl $spacing-lg $spacing-lg;
+  border-radius: $radius-lg;
+  background: $bg-card;
+  text-align: center;
+  box-shadow: $shadow-md;
+}
+
+.dialog-title {
+  font-size: $font-size-base;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.dialog-tip {
+  margin-top: $spacing-sm;
+  font-size: $font-size-sm;
+  line-height: 1.6;
+  color: $text-secondary;
+  word-break: break-all;
+}
+
+.dialog-actions {
+  margin-top: $spacing-lg;
+  display: flex;
+  gap: $spacing-sm;
+}
+
+.dialog-btn {
+  flex: 1;
+  height: 38px;
+  border-radius: $radius-full;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  transition: $transition-base;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.dialog-cancel {
+  background: $bg-page;
+  border: 1px solid $border-color;
+  color: $text-secondary;
+}
+
+.dialog-ok {
+  background: $color-primary;
+  color: #fff;
+
+  &:active {
+    opacity: 0.85;
+  }
+
+  /* 取消摘单为撤销性操作，使用警示色 */
+  &.danger {
+    background: $color-danger;
+  }
+}
+
+/* ===== 轻提示 ===== */
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  z-index: 100;
+  max-width: min(320px, calc(100vw - 48px));
+  padding: $spacing-sm $spacing-lg;
+  border-radius: $radius-full;
+  background: rgba(17, 24, 39, 0.88);
+  color: #fff;
+  font-size: $font-size-sm;
+  text-align: center;
+  box-shadow: $shadow-md;
 }
 </style>

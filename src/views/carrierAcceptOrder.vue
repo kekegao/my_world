@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { carrierAcceptOrder, querySourceOrderList, type PublishedOrderItem } from '@/api/modules/order'
 
 const router = useRouter()
 
 type OrderStatus = '可摘单' | '已摘单'
-type TabKey = OrderStatus | '全部'
 
 /** 货源订单（承运方视角） */
 interface SourceOrder {
@@ -34,184 +34,130 @@ interface SourceOrder {
   shipperMobile: string
 }
 
-/**
- * 当前为前端模拟数据，方便直接预览效果；
- * 对接后端时，将 initialOrders 替换为「货源大厅/摘单列表」接口返回值即可。
- */
-const initialOrders: SourceOrder[] = [
-  {
-    id: 1,
-    orderNo: 'YD20260902001',
-    status: '可摘单',
-    publishTime: '2026-09-02 09:32',
-    goodsType: '煤炭',
-    goodsDescription: '动力煤，低位发热量 5200 大卡',
-    goodsWeight: 60,
-    transportMoney: 3200,
-    shipperProvince: '广东省',
-    shipperCity: '韶关市',
-    shipperArea: '曲江区',
-    shipperAddress: '乌石镇火车站东侧货场',
-    carrierProvince: '广东省',
-    carrierCity: '惠州市',
-    carrierArea: '惠阳区',
-    carrierAddress: '秋长镇维布工业园仓库',
-    shipperName: '赵敏',
-    shipperMobile: '13900000003',
-  },
-  {
-    id: 2,
-    orderNo: 'YD20260902002',
-    status: '可摘单',
-    publishTime: '2026-09-02 08:50',
-    goodsType: '建材',
-    goodsDescription: '建筑河沙，装车后需覆盖篷布',
-    goodsWeight: 25,
-    transportMoney: 1800,
-    shipperProvince: '广东省',
-    shipperCity: '广州市',
-    shipperArea: '番禺区',
-    shipperAddress: '东环街道兴南路 12 号堆场',
-    carrierProvince: '广东省',
-    carrierCity: '深圳市',
-    carrierArea: '宝安区',
-    carrierAddress: '福永街道福园一路 88 号工地',
-    shipperName: '张伟',
-    shipperMobile: '13800000001',
-  },
-  {
-    id: 3,
-    orderNo: 'YD20260902003',
-    status: '可摘单',
-    publishTime: '2026-09-02 08:15',
-    goodsType: '钢铁',
-    goodsDescription: '螺纹钢 HRB400，约 120 根',
-    goodsWeight: 42,
-    transportMoney: 2600,
-    shipperProvince: '广东省',
-    shipperCity: '佛山市',
-    shipperArea: '顺德区',
-    shipperAddress: '乐从钢铁世界 A 区 6 号仓',
-    carrierProvince: '广东省',
-    carrierCity: '东莞市',
-    carrierArea: '长安镇',
-    carrierAddress: '霄边工业区振安中路 100 号',
-    shipperName: '王芳',
-    shipperMobile: '13800000002',
-  },
-  {
-    id: 4,
-    orderNo: 'YD20260902004',
-    status: '已摘单',
-    publishTime: '2026-09-01 16:40',
-    goodsType: '煤炭',
-    goodsDescription: '洗精煤，灰分 ≤ 12%',
-    goodsWeight: 58,
-    transportMoney: 3100,
-    shipperProvince: '广东省',
-    shipperCity: '清远市',
-    shipperArea: '清城区',
-    shipperAddress: '源潭镇红杉装卸场',
-    carrierProvince: '广东省',
-    carrierCity: '江门市',
-    carrierArea: '台山市',
-    carrierAddress: '台城街道陈宜禧路仓库',
-    shipperName: '林峰',
-    shipperMobile: '13900000007',
-  },
-  {
-    id: 5,
-    orderNo: 'YD20260901005',
-    status: '可摘单',
-    publishTime: '2026-09-01 10:05',
-    goodsType: '其他',
-    goodsDescription: '日用百货散货，共 12 托',
-    goodsWeight: 3.5,
-    transportMoney: 650,
-    shipperProvince: '广东省',
-    shipperCity: '东莞市',
-    shipperArea: '南城区',
-    shipperAddress: '宏图路 33 号物流园 3 号库',
-    carrierProvince: '广东省',
-    carrierCity: '珠海市',
-    carrierArea: '香洲区',
-    carrierAddress: '南屏科技园屏东二路 6 号',
-    shipperName: '孙丽',
-    shipperMobile: '13800000004',
-  },
-  {
-    id: 6,
-    orderNo: 'YD20260901006',
-    status: '已摘单',
-    publishTime: '2026-09-01 09:18',
-    goodsType: '建材',
-    goodsDescription: '袋装水泥 P.O 42.5，800 包',
-    goodsWeight: 40,
-    transportMoney: 2200,
-    shipperProvince: '广东省',
-    shipperCity: '肇庆市',
-    shipperArea: '四会市',
-    shipperAddress: '大沙镇陶瓷城西门装卸点',
-    carrierProvince: '广东省',
-    carrierCity: '广州市',
-    carrierArea: '白云区',
-    carrierAddress: '太和镇大源北路 150 号工地',
-    shipperName: '吴涛',
-    shipperMobile: '13900000005',
-  },
-  {
-    id: 7,
-    orderNo: 'YD20260901007',
-    status: '可摘单',
-    publishTime: '2026-09-01 08:30',
-    goodsType: '钢铁',
-    goodsDescription: '钢板 Q235B 10mm，30 张',
-    goodsWeight: 32,
-    transportMoney: 2000,
-    shipperProvince: '广东省',
-    shipperCity: '广州市',
-    shipperArea: '黄埔区',
-    shipperAddress: '鱼珠码头金属加工区',
-    carrierProvince: '广东省',
-    carrierCity: '佛山市',
-    carrierArea: '南海区',
-    carrierAddress: '狮山镇小塘工业大道 21 号',
-    shipperName: '郑凯',
-    shipperMobile: '13800000006',
-  },
-  {
-    id: 8,
-    orderNo: 'YD20260831008',
-    status: '可摘单',
-    publishTime: '2026-08-31 15:22',
-    goodsType: '建材',
-    goodsDescription: '河沙细沙 2.0 目，装车覆盖',
-    goodsWeight: 30,
-    transportMoney: undefined,
-    shipperProvince: '广东省',
-    shipperCity: '清远市',
-    shipperArea: '英德市',
-    shipperAddress: '浛洸镇望埠河段装卸点',
-    carrierProvince: '广东省',
-    carrierCity: '广州市',
-    carrierArea: '白云区',
-    carrierAddress: '钟落潭镇良田路 66 号工地',
-    shipperName: '何静',
-    shipperMobile: '13900000008',
-  },
-]
+/** 后端货源行数据结构（tf_b_order 返回结构，status 为数值） */
+type RawSourceOrder = PublishedOrderItem
 
-const orderList = ref<SourceOrder[]>(initialOrders)
+/** 后端订单状态 → 承运端文案（货源大厅仅返回 1发布=可摘 / 2摘单=已摘） */
+const SOURCE_STATUS_MAP: Record<number, OrderStatus> = {
+  1: '可摘单',
+  2: '已摘单',
+}
+
+/** 后端订单行 → 页面货源展示结构 */
+function toSourceOrder(row: RawSourceOrder): SourceOrder {
+  const statusNum = Number(row.status)
+  return {
+    id: row.id ?? 0,
+    orderNo: row.orderId ?? '',
+    status: SOURCE_STATUS_MAP[statusNum] ?? '可摘单',
+    publishTime: row.createTime ?? '',
+    goodsType: row.goodsType ?? '',
+    goodsDescription: row.goodsDescription ?? '',
+    goodsWeight: row.goodsWeight ?? 0,
+    transportMoney: row.transportMoney,
+    shipperProvince: row.shipperProvince ?? '',
+    shipperCity: row.shipperCity ?? '',
+    shipperArea: row.shipperArea ?? '',
+    shipperAddress: row.shipperAddress ?? '',
+    carrierProvince: row.carrierProvince ?? '',
+    carrierCity: row.carrierCity ?? '',
+    carrierArea: row.carrierArea ?? '',
+    carrierAddress: row.carrierAddress ?? '',
+    shipperName: row.shipperName ?? '',
+    shipperMobile: row.shipperMobile ?? '',
+  }
+}
+
+/** 展示列表：大厅全量或线路搜索结果 */
+const orderList = ref<SourceOrder[]>([])
+/** 大厅全量货源快照，仅用于顶部统计口径（线路搜索不改变） */
+const allOrders = ref<SourceOrder[]>([])
+/** 列表加载状态 */
+const loading = ref(false)
+const loadError = ref('')
+/** 最近一次查询条件，供失败重试复用 */
+const lastQuery = ref<{ shipperKeyword?: string; carrierKeyword?: string }>({})
+/** 当前是否处于「线路搜索」结果态（区别于大厅全量） */
+const searched = ref(false)
+
+/**
+ * 查询货源大厅（POST /api/accept/list）
+ * @param keyword 携带 shipperKeyword / carrierKeyword 即线路搜索；缺省则返回大厅全量
+ */
+async function fetchOrders(keyword: { shipperKeyword?: string; carrierKeyword?: string } = {}) {
+  loading.value = true
+  loadError.value = ''
+  const query = {
+    shipperKeyword: keyword.shipperKeyword?.trim() || undefined,
+    carrierKeyword: keyword.carrierKeyword?.trim() || undefined,
+  }
+  lastQuery.value = query
+  try {
+    const res = (await querySourceOrderList(query)) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+      data?: RawSourceOrder[]
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      const rows = Array.isArray(res.data) ? res.data.map(toSourceOrder) : []
+      orderList.value = rows
+      if (!query.shipperKeyword && !query.carrierKeyword) {
+        allOrders.value = rows
+      }
+      return
+    }
+    loadError.value = res?.message || '加载失败，请稍后重试'
+    orderList.value = []
+  } catch (err) {
+    console.error('加载货源大厅失败：', err)
+    loadError.value = '无法连接服务器，请确认后端服务已启动'
+    orderList.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 进入页面：拉取大厅全量货源 */
+onMounted(() => {
+  fetchOrders()
+})
+
+/** 发货地 / 收货地搜索输入 */
+const fromQuery = ref('')
+const toQuery = ref('')
+
+/** 输入中是否存在关键字（用于空结果提示文案） */
+const hasKeyword = computed(() => !!(fromQuery.value.trim() || toQuery.value.trim()))
+
+/** 点击「搜索」：以发货地 / 收货地关键字查询后端 */
+async function handleSearch() {
+  if (loading.value) return
+  searched.value = true
+  await fetchOrders({
+    shipperKeyword: fromQuery.value.trim() || undefined,
+    carrierKeyword: toQuery.value.trim() || undefined,
+  })
+}
+
+/** 重置：清空输入并回到大厅全量 */
+async function handleReset() {
+  fromQuery.value = ''
+  toQuery.value = ''
+  searched.value = false
+  await fetchOrders()
+}
+
+/** 加载失败重试（沿用最近一次查询条件） */
+function handleRetry() {
+  fetchOrders({ ...lastQuery.value })
+}
 
 /** 摘单状态主题色 */
 const statusTheme: Record<OrderStatus, { color: string; bg: string }> = {
   可摘单: { color: '#b45309', bg: '#fef3c7' },
   已摘单: { color: '#047857', bg: '#d1fae5' },
 }
-
-/** 筛选标签 */
-const tabs: TabKey[] = ['全部', '可摘单', '已摘单']
-const activeTab = ref<TabKey>('全部')
 
 /** 当前查看详情的订单，null 表示处于列表页 */
 const currentOrder = ref<SourceOrder | null>(null)
@@ -231,13 +177,9 @@ function showToast(msg: string) {
   }, 2200)
 }
 
-const filteredOrders = computed(() =>
-  activeTab.value === '全部' ? orderList.value : orderList.value.filter((o) => o.status === activeTab.value),
-)
-
-/** 顶部统计 */
+/** 顶部统计：以大厅全量货源为准，搜索结果不改变口径 */
 const stats = computed(() => {
-  const list = orderList.value
+  const list = allOrders.value
   return {
     total: list.length,
     open: list.filter((o) => o.status === '可摘单').length,
@@ -267,15 +209,28 @@ function closeDetail() {
   nextTick(() => window.scrollTo({ top: 0 }))
 }
 
-/** 摘单（模拟请求） */
+/**
+ * 摘单（抢单）：调用后端 /api/accept/acceptOrder
+ * 后端负责状态 CAS 防并发 + 幂等，此处仅展示请求结果。
+ */
 async function grabOrder(order: SourceOrder) {
   if (order.status === '已摘单' || grabbingId.value != null) return
   grabbingId.value = order.id
   try {
-    // TODO: 对接后端后替换为摘单接口调用，如 carrierAccept({ orderNo: order.orderNo })
-    await new Promise<void>((resolve) => setTimeout(resolve, 600))
-    order.status = '已摘单'
-    showToast('摘单成功，请及时联系货主')
+    const res = (await carrierAcceptOrder({ orderId: order.orderNo })) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      order.status = '已摘单'
+      showToast('摘单成功，请及时联系货主')
+    } else {
+      showToast(res?.message || '摘单失败，请稍后重试')
+    }
+  } catch (err) {
+    console.error('摘单失败：', err)
+    showToast('网络异常，摘单失败，请稍后重试')
   } finally {
     grabbingId.value = null
   }
@@ -329,25 +284,39 @@ function goBack() {
           </div>
         </section>
 
-        <!-- 状态筛选 -->
-        <nav class="filter-bar">
-          <button
-            v-for="tab in tabs"
-            :key="tab"
-            type="button"
-            class="filter-chip"
-            :class="{ active: activeTab === tab }"
-            @click="activeTab = tab"
-          >
-            {{ tab }}
-          </button>
-        </nav>
+        <!-- 线路搜索：发货地 → 收货地，最右端搜索按钮 -->
+        <section class="search-card">
+          <div class="search-row">
+            <label class="search-field">
+              <span class="field-tag tag-from">发货</span>
+              <input v-model.trim="fromQuery" type="text" placeholder="发货地省市区" aria-label="发货地" @keyup.enter="handleSearch" />
+            </label>
+            <span class="field-arrow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M4 12h14m0 0-5-5m5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <label class="search-field">
+              <span class="field-tag tag-to">收货</span>
+              <input v-model.trim="toQuery" type="text" placeholder="收货地省市区" aria-label="收货地" @keyup.enter="handleSearch" />
+            </label>
+            <button type="button" class="search-btn" :disabled="loading" @click="handleSearch">
+              {{ loading ? '…' : '搜索' }}
+            </button>
+          </div>
+          <footer class="search-foot">
+            <span class="search-tip">
+              {{ loadError ? '加载失败，可点「重置」或下方「重新加载」重试' : searched ? `当前线路共 ${orderList.length} 条货源` : '输入发货地 / 收货地后点击搜索查询' }}
+            </span>
+            <button v-if="searched" type="button" class="search-reset" @click="handleReset">重置</button>
+          </footer>
+        </section>
 
         <!-- 货源列表 -->
         <main class="order-list">
-          <p v-if="filteredOrders.length" class="list-count">共 {{ filteredOrders.length }} 条货源</p>
+          <p v-if="orderList.length" class="list-count">{{ searched ? '线路匹配' : '共' }} {{ orderList.length }} 条货源</p>
 
-          <article v-for="order in filteredOrders" :key="order.id" class="order-card">
+          <article v-for="order in orderList" :key="order.id" class="order-card">
             <!-- 顶部：货主 + 状态 -->
             <div class="card-head">
               <span class="shipper-name">
@@ -413,8 +382,8 @@ function goBack() {
             </footer>
           </article>
 
-          <!-- 空状态 -->
-          <div v-if="!filteredOrders.length" class="empty-state">
+          <!-- 空状态：加载中 / 失败可重试 / 无结果 -->
+          <div v-if="!orderList.length" class="empty-state">
             <svg class="empty-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
               <rect x="6" y="16" width="38" height="26" rx="4" fill="#e5e7eb" />
               <path d="M44 26h10a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H46a4 4 0 0 1-4-4v-6a6 6 0 0 0 2-6z" fill="#d1d5db" />
@@ -422,8 +391,15 @@ function goBack() {
               <circle cx="43" cy="48" r="5" fill="#cbd5e1" />
               <path d="M6 16 10 6h30" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <p class="empty-title">暂无货源信息</p>
-            <p class="empty-tip">当前分类下暂时没有合适的货源</p>
+            <p class="empty-title">
+              {{ loading ? '加载中…' : loadError ? '加载失败' : hasKeyword ? '没有找到匹配的货源' : '暂无货源信息' }}
+            </p>
+            <p class="empty-tip">
+              {{ loading ? '正在查询货源，请稍候' : loadError ? loadError : hasKeyword ? '试试更换发货地 / 收货地关键词' : '当前暂无合适的货源，稍后再来看看' }}
+            </p>
+            <button v-if="loadError && !loading" type="button" class="detail-btn empty-retry" @click="handleRetry">
+              重新加载
+            </button>
           </div>
         </main>
       </div>
@@ -674,43 +650,126 @@ function goBack() {
   }
 }
 
-/* ===== 状态筛选 ===== */
-.filter-bar {
+/* ===== 线路搜索卡 ===== */
+.search-card {
+  margin: 0 $spacing-md $spacing-sm;
+  padding: $spacing-md;
+  border-radius: $radius-lg;
+  background: $bg-card;
+  box-shadow: $shadow-sm;
+}
+
+.search-row {
   display: flex;
-  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
-  padding: 0 $spacing-md $spacing-xs;
-  overflow-x: auto;
-  scrollbar-width: none;
+}
 
-  &::-webkit-scrollbar {
-    display: none;
-  }
+.search-field {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: $radius-md;
+  background: $bg-page;
+}
 
-  &::after {
-    content: '';
-    flex-shrink: 0;
-    width: $spacing-sm;
+.field-tag {
+  flex-shrink: 0;
+  font-size: $font-size-xs;
+  font-weight: 600;
+}
+
+.tag-from {
+  color: $color-primary;
+}
+
+.tag-to {
+  color: $color-danger;
+}
+
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: $font-size-sm;
+  color: $text-primary;
+
+  &::placeholder {
+    color: $text-muted;
   }
 }
 
-.filter-chip {
+.field-arrow {
   flex-shrink: 0;
-  padding: 5px 11px;
-  border-radius: $radius-full;
-  background: $bg-card;
-  border: 1px solid $border-color;
-  color: $text-secondary;
+  display: flex;
+  color: $text-muted;
+
+  svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.search-btn {
+  flex-shrink: 0;
+  width: 56px;
+  height: 40px;
+  border: none;
+  border-radius: $radius-md;
+  background: linear-gradient(135deg, #047857, #10b981);
+  color: #fff;
   font-size: $font-size-sm;
+  font-weight: 600;
+  box-shadow: $shadow-sm;
   transition: $transition-base;
 
-  &.active {
-    background: rgba($color-success, 0.12);
-    border-color: rgba($color-success, 0.4);
-    color: $color-success;
-    font-weight: 600;
+  &:active {
+    opacity: 0.85;
+    transform: scale(0.97);
   }
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.search-foot {
+  margin-top: $spacing-sm;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.search-tip {
+  font-size: $font-size-xs;
+  color: $text-muted;
+}
+
+.search-reset {
+  flex-shrink: 0;
+  padding: 3px 12px;
+  border: none;
+  border-radius: $radius-full;
+  background: rgba($text-muted, 0.1);
+  color: $text-secondary;
+  font-size: $font-size-xs;
+  transition: $transition-base;
+
+  &:active {
+    opacity: 0.7;
+  }
+}
+
+.empty-retry {
+  margin-top: $spacing-sm;
 }
 
 /* ===== 货源列表 ===== */

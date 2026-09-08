@@ -119,3 +119,43 @@ export interface PublishOrderListParams {
 export function queryPublishOrderList(params: PublishOrderListParams = {}) {
   return post('/api/publishOrder/list', params)
 }
+
+/** 承运端货源大厅查询参数 */
+export interface SourceOrderQueryParams {
+  /** 发货地关键字（选填），模糊匹配发货省/市/区/详细地址 */
+  shipperKeyword?: string
+  /** 收货地关键字（选填），模糊匹配收货省/市/区/详细地址 */
+  carrierKeyword?: string
+}
+
+/** 承运端货源大厅列表（可摘货源 / 线路搜索） */
+export function querySourceOrderList(params: SourceOrderQueryParams = {}) {
+  return post('/api/accept/list', params)
+}
+
+/** 摘单（抢单）请求参数 */
+export interface AcceptOrderParams {
+  /** 运单号 */
+  orderId: string
+}
+
+/** 承运端摘单（后端负责防并发抢单与幂等） */
+export function carrierAcceptOrder(data: AcceptOrderParams) {
+  return post('/api/accept/acceptOrder', data)
+}
+
+/** 货主端运单操作请求参数 */
+export interface OrderOperateParams {
+  /** 运单号 */
+  orderId: string
+}
+
+/** 货主确认成交：摘单(2) -> 成交(3) */
+export function dealPublishOrder(data: OrderOperateParams) {
+  return post('/api/publishOrder/dealOrder', data)
+}
+
+/** 货主取消承运方摘单：摘单(2) -> 发布(1)，恢复等待摘单 */
+export function cancelPublishOrderAccept(data: OrderOperateParams) {
+  return post('/api/publishOrder/cancelAccept', data)
+}
