@@ -1,172 +1,274 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { carrierShipOrder, queryCarrierOrders } from '@/api/modules/order'
 
 const router = useRouter()
 
-type OrderStatus = '运输中' | '已完成'
-type TabKey = OrderStatus | '全部'
+type TabKey = '全部' | '进行中' | '已完成'
 
-/** 我摘过的运单（承运方视角） */
+/**
+ * 我摘过的运单（承运方视角）。
+ * 结构对齐后端 OrderDto：status 为状态机数字，statusDesc 为后端状态文案
+ * （状态机：2摘单-3成交-4发货-5确认收货-6回单确认-7结算申请-8结算-9对账-10发票）。
+ */
 interface MyOrderItem {
-  id: number
-  orderNo: string
-  status: OrderStatus
-  /** 摘单时间 */
-  grabTime: string
-  goodsType: string
-  goodsDescription: string
+  /** 订单号 */
+  orderId: string
+  /** 订单状态：2 摘单 ~ 10 发票 */
+  status: number
+  /** 订单状态描述，例如：摘单 */
+  statusDesc: string
+  /** 发布时间（ISO 字符串），用于详情展示 */
+  createTime?: string
+  /** 物品类型 */
+  goodsType?: string
+  /** 物品描述 */
+  goodsDescription?: string
   /** 物品重量（吨） */
-  goodsWeight: number
+  goodsWeight?: number
   /** 运费（元），空表示面议 */
   transportMoney?: number
-  // 发货地址
+  /** 发货源省市区-省份 */
   shipperProvince: string
+  /** 发货源省市区-城市 */
   shipperCity: string
+  /** 发货源省市区-地区 */
   shipperArea: string
+  /** 发货源省市区-详细地址 */
   shipperAddress: string
-  // 收货地址
+  /** 收货地省市区-省份 */
   carrierProvince: string
+  /** 收货地省市区-城市 */
   carrierCity: string
+  /** 收货地省市区-地区 */
   carrierArea: string
+  /** 收货地省市区-详细地址 */
   carrierAddress: string
-  // 货主
+  /** 货主名称 */
   shipperName: string
+  /** 货主手机号 */
   shipperMobile: string
 }
 
-/**
- * 当前为前端模拟数据，方便直接预览效果；
- * 对接后端时，将 initialOrders 替换为「承运方摘单列表」接口返回值即可。
- */
-const initialOrders: MyOrderItem[] = [
-  {
-    id: 1,
-    orderNo: 'YD20260902001',
-    status: '运输中',
-    grabTime: '2026-09-02 09:40',
-    goodsType: '煤炭',
-    goodsDescription: '动力煤，低位发热量 5200 大卡',
-    goodsWeight: 60,
-    transportMoney: 3200,
-    shipperProvince: '广东省',
-    shipperCity: '韶关市',
-    shipperArea: '曲江区',
-    shipperAddress: '乌石镇火车站东侧货场',
-    carrierProvince: '广东省',
-    carrierCity: '惠州市',
-    carrierArea: '惠阳区',
-    carrierAddress: '秋长镇维布工业园仓库',
-    shipperName: '赵敏',
-    shipperMobile: '13900000003',
-  },
-  {
-    id: 2,
-    orderNo: 'YD20260901005',
-    status: '运输中',
-    grabTime: '2026-09-01 10:12',
-    goodsType: '其他',
-    goodsDescription: '日用百货，需防潮垫底',
-    goodsWeight: 12,
-    transportMoney: 950,
-    shipperProvince: '广东省',
-    shipperCity: '东莞市',
-    shipperArea: '虎门镇',
-    shipperAddress: '虎门大道 88 号物流园 A 区',
-    carrierProvince: '广东省',
-    carrierCity: '佛山市',
-    carrierArea: '顺德区',
-    carrierAddress: '容桂街道容奇大道 15 号仓库',
-    shipperName: '李强',
-    shipperMobile: '13700000005',
-  },
-  {
-    id: 3,
-    orderNo: 'YD20260831009',
-    status: '已完成',
-    grabTime: '2026-08-31 09:20',
-    goodsType: '建材',
-    goodsDescription: '建筑河沙，装车后需覆盖篷布',
-    goodsWeight: 25,
-    transportMoney: 1800,
-    shipperProvince: '广东省',
-    shipperCity: '广州市',
-    shipperArea: '番禺区',
-    shipperAddress: '东环街道兴南路 12 号堆场',
-    carrierProvince: '广东省',
-    carrierCity: '深圳市',
-    carrierArea: '宝安区',
-    carrierAddress: '福永街道福园一路 88 号工地',
-    shipperName: '张伟',
-    shipperMobile: '13800000001',
-  },
-  {
-    id: 4,
-    orderNo: 'YD20260830012',
-    status: '已完成',
-    grabTime: '2026-08-30 14:05',
-    goodsType: '钢铁',
-    goodsDescription: '螺纹钢 HRB400，共 5 捆',
-    goodsWeight: 40,
-    transportMoney: 2600,
-    shipperProvince: '广东省',
-    shipperCity: '佛山市',
-    shipperArea: '乐从镇',
-    shipperAddress: '乐从钢铁世界 C 区 12 档',
-    carrierProvince: '广东省',
-    carrierCity: '江门市',
-    carrierArea: '新会区',
-    carrierAddress: '会城街道今古洲工业园工地',
-    shipperName: '王芳',
-    shipperMobile: '13600000002',
-  },
-  {
-    id: 5,
-    orderNo: 'YD20260828003',
-    status: '已完成',
-    grabTime: '2026-08-28 08:55',
-    goodsType: '煤炭',
-    goodsDescription: '块煤，装车均匀堆放',
-    goodsWeight: 33,
-    transportMoney: 2100,
-    shipperProvince: '广东省',
-    shipperCity: '清远市',
-    shipperArea: '英德市',
-    shipperAddress: '英红工业园储煤场',
-    carrierProvince: '广东省',
-    carrierCity: '肇庆市',
-    carrierArea: '四会市',
-    carrierAddress: '南江工业园纸箱厂',
-    shipperName: '陈涛',
-    shipperMobile: '13500000006',
-  },
-]
+/** 已摘后仍处于运输/结算前的过程状态（含摘单待发货等履约阶段） */
+const RUNNING_STATUSES = [2, 3, 4, 5, 6, 7]
+/** 结算收尾的完成状态 */
+const DONE_STATUSES = [8, 9, 10]
 
-const orderList = ref<MyOrderItem[]>(initialOrders)
+/** 后端 statusDesc 缺失时按状态机兜底 */
+const STATUS_TEXT: Record<number, string> = {
+  2: '摘单',
+  3: '成交',
+  4: '发货',
+  5: '确认收货',
+  6: '回单确认',
+  7: '结算申请',
+  8: '结算',
+  9: '对账',
+  10: '发票',
+}
 
-/** 运单状态主题色 */
-const statusTheme: Record<OrderStatus, { color: string; bg: string }> = {
-  运输中: { color: '#0369a1', bg: '#e0f2fe' },
+function statusText(status: number): string {
+  return STATUS_TEXT[status] || `状态${status}`
+}
+
+/** 状态分桶：进行中 / 已完成（未知状态兜底为已完成，保证筛选不丢单） */
+function bucketOf(status: number): '进行中' | '已完成' {
+  if (RUNNING_STATUSES.includes(status)) return '进行中'
+  if (DONE_STATUSES.includes(status)) return '已完成'
+  return '已完成'
+}
+
+/** 承运方已摘运单列表（后端实时数据） */
+const orderList = ref<MyOrderItem[]>([])
+/** 首次加载中 */
+const loading = ref(false)
+/** 请求失败（区别于无数据空态） */
+const loadFailed = ref(false)
+const loadErrorMsg = ref('')
+
+/** 状态主题色 */
+const statusTheme: Record<'进行中' | '已完成', { color: string; bg: string }> = {
+  进行中: { color: '#0369a1', bg: '#e0f2fe' },
   已完成: { color: '#047857', bg: '#d1fae5' },
 }
 
+/** 状态徽章样式：按进行中/已完成分桶取色 */
+function badgeStyle(status: number) {
+  const theme = statusTheme[bucketOf(status)]
+  return { color: theme.color, background: theme.bg }
+}
+
 /** 筛选标签 */
-const tabs: TabKey[] = ['全部', '运输中', '已完成']
+const tabs: TabKey[] = ['全部', '进行中', '已完成']
 const activeTab = ref<TabKey>('全部')
 
-const filteredOrders = computed(() =>
-  activeTab.value === '全部' ? orderList.value : orderList.value.filter((o) => o.status === activeTab.value),
-)
+const filteredOrders = computed(() => {
+  if (activeTab.value === '全部') return orderList.value
+  return orderList.value.filter((o) => bucketOf(o.status) === activeTab.value)
+})
 
 /** 顶部统计 */
 const stats = computed(() => {
   const list = orderList.value
   return {
     total: list.length,
-    running: list.filter((o) => o.status === '运输中').length,
-    done: list.filter((o) => o.status === '已完成').length,
+    running: list.filter((o) => bucketOf(o.status) === '进行中').length,
+    done: list.filter((o) => bucketOf(o.status) === '已完成').length,
   }
 })
+
+/** 后端行数据归一化（补默认值、数字转换、状态文案兜底） */
+function normalizeOrder(raw: Record<string, unknown>): MyOrderItem {
+  const status = Number(raw.status ?? 2)
+  return {
+    orderId: String(raw.orderId ?? ''),
+    status,
+    statusDesc: String(raw.statusDesc ?? '') || statusText(status),
+    createTime: raw.createTime != null ? String(raw.createTime) : undefined,
+    goodsType: raw.goodsType != null ? String(raw.goodsType) : '',
+    goodsDescription: raw.goodsDescription != null ? String(raw.goodsDescription) : '',
+    goodsWeight: raw.goodsWeight != null ? Number(raw.goodsWeight) : undefined,
+    transportMoney: raw.transportMoney != null ? Number(raw.transportMoney) : undefined,
+    shipperProvince: String(raw.shipperProvince ?? ''),
+    shipperCity: String(raw.shipperCity ?? ''),
+    shipperArea: String(raw.shipperArea ?? ''),
+    shipperAddress: String(raw.shipperAddress ?? ''),
+    carrierProvince: String(raw.carrierProvince ?? ''),
+    carrierCity: String(raw.carrierCity ?? ''),
+    carrierArea: String(raw.carrierArea ?? ''),
+    carrierAddress: String(raw.carrierAddress ?? ''),
+    shipperName: String(raw.shipperName ?? ''),
+    shipperMobile: String(raw.shipperMobile ?? ''),
+  }
+}
+
+/**
+ * 实时查询后端：当前承运方所有已摘的运单。
+ * 承运方身份由后端从登录态获取（POST /api/accept/myOrders），不传任何身份参数。
+ */
+async function loadOrders() {
+  loading.value = true
+  loadFailed.value = false
+  try {
+    const res = (await queryCarrierOrders()) as {
+      success?: boolean
+      code?: string | number
+      data?: MyOrderItem[]
+      message?: string
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      orderList.value = Array.isArray(res.data)
+        ? res.data.map((raw) => normalizeOrder(raw as unknown as Record<string, unknown>))
+        : []
+    } else {
+      loadFailed.value = true
+      loadErrorMsg.value = res?.message || '查询运单失败，请稍后重试'
+    }
+  } catch (err) {
+    console.error('查询我的运单失败：', err)
+    loadFailed.value = true
+    loadErrorMsg.value = '网络异常，请稍后重试'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  loadOrders()
+})
+
+/** 当前查看详情的运单：非空时整页切换为「查看详情」（与 publishOrderList 同款模式） */
+const currentOrder = ref<MyOrderItem | null>(null)
+
+function openDetail(order: MyOrderItem) {
+  currentOrder.value = order
+  nextTick(() => window.scrollTo({ top: 0 }))
+}
+
+function closeDetail() {
+  currentOrder.value = null
+  nextTick(() => window.scrollTo({ top: 0 }))
+}
+
+/* ===== 确认发货：成交(3) -> 发货(4)，后端校验仅承运方本人 ===== */
+/** 待确认发货的运单 */
+const shipTarget = ref<MyOrderItem | null>(null)
+const shipping = ref(false)
+
+function openShipConfirm(order: MyOrderItem) {
+  shipTarget.value = order
+}
+
+function closeShipConfirm() {
+  if (shipping.value) return
+  shipTarget.value = null
+}
+
+/** 提交确认发货，成功后刷新列表 */
+async function submitShip() {
+  const order = shipTarget.value
+  if (!order || shipping.value) return
+  shipping.value = true
+  let succeeded = false
+  try {
+    const res = (await carrierShipOrder({ orderId: order.orderId })) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      succeeded = true
+    } else {
+      showToast(res?.message || '发货失败，请稍后重试')
+    }
+  } catch (err) {
+    console.error('确认发货失败：', err)
+    showToast('网络异常，请稍后重试')
+  } finally {
+    shipping.value = false
+    if (succeeded) {
+      shipTarget.value = null
+      showToast('已确认发货')
+      loadOrders()
+    }
+  }
+}
+
+/* ===== 轻提示 ===== */
+const toastMsg = ref('')
+let toastTimer: ReturnType<typeof setTimeout> | undefined
+function showToast(msg: string) {
+  toastMsg.value = msg
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toastMsg.value = ''
+  }, 2000)
+}
+
+/* ===== 展示格式化 ===== */
+function displayValue(value?: string | null): string {
+  return value && value.trim() ? value : '—'
+}
+
+function formatTime(time?: string | null): string {
+  if (!time) return ''
+  const date = new Date(time)
+  if (Number.isNaN(date.getTime())) return time
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function formatMoney(money?: number | string | null): string {
+  if (money === null || money === undefined || money === '') return '面议'
+  const num = Number(money)
+  return Number.isFinite(num) ? `¥ ${num}` : '面议'
+}
+
+function weightText(order: MyOrderItem): string {
+  return order.goodsWeight === null || order.goodsWeight === undefined ? '未填写' : `${order.goodsWeight} 吨`
+}
 
 /** 拼接省市区，过滤空段 */
 function region(province: string, city: string, area: string): string {
@@ -185,115 +287,286 @@ function goBack() {
 
 <template>
   <div class="order-app">
-    <!-- 顶部导航 -->
-    <header class="top-bar">
-      <button type="button" class="back-btn" aria-label="返回" @click="goBack">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <span class="top-title">我的运单</span>
-      <span class="top-right"></span>
-    </header>
-
-    <!-- 统计卡片 -->
-    <section class="stats-card">
-      <div class="stats-main">
-        <span class="stats-label">已摘运单</span>
-        <strong class="stats-num">{{ stats.total }}</strong>
-      </div>
-      <div class="stats-grid">
-        <div class="stats-item">
-          <b>{{ stats.running }}</b>
-          <span>运输中</span>
-        </div>
-        <div class="stats-item">
-          <b>{{ stats.done }}</b>
-          <span>已完成</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- 状态筛选 -->
-    <nav class="filter-bar">
-      <button
-        v-for="tab in tabs"
-        :key="tab"
-        type="button"
-        class="filter-chip"
-        :class="{ active: activeTab === tab }"
-        @click="activeTab = tab"
-      >
-        {{ tab }}
-      </button>
-    </nav>
-
-    <!-- 运单列表 -->
-    <main class="order-list">
-      <p v-if="filteredOrders.length" class="list-count">共 {{ filteredOrders.length }} 条运单</p>
-
-      <article v-for="order in filteredOrders" :key="order.id" class="order-card">
-        <!-- 顶部：货主 + 状态 -->
-        <div class="card-head">
-          <span class="shipper-name">
+    <!-- ======= 列表页 ======= -->
+    <Transition name="page" mode="out-in">
+      <div v-if="!currentOrder" key="list" class="page-list">
+        <!-- 顶部导航 -->
+        <header class="top-bar">
+          <button type="button" class="back-btn" aria-label="返回" @click="goBack">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" />
-              <path d="M4.5 20c.9-3.2 3.7-5 7.5-5s6.6 1.8 7.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            {{ order.shipperName }}
-          </span>
-          <span class="status-badge" :style="{ color: statusTheme[order.status].color, background: statusTheme[order.status].bg }">
-            {{ order.status }}
-          </span>
-        </div>
+          </button>
+          <span class="top-title">我的运单</span>
+          <span class="top-right"></span>
+        </header>
 
-        <!-- 路线：发货 / 收货地址 -->
-        <div class="route">
-          <div class="route-row">
-            <div class="route-marker marker-from"></div>
-            <div class="route-text">
-              <span class="route-tag tag-from">发货</span>
-              <p class="route-region">{{ region(order.shipperProvince, order.shipperCity, order.shipperArea) }}</p>
-              <p class="route-detail">{{ order.shipperAddress }}</p>
+        <!-- 统计卡片 -->
+        <section class="stats-card">
+          <div class="stats-main">
+            <span class="stats-label">已摘运单</span>
+            <strong class="stats-num">{{ stats.total }}</strong>
+          </div>
+          <div class="stats-grid">
+            <div class="stats-item">
+              <b>{{ stats.running }}</b>
+              <span>进行中</span>
+            </div>
+            <div class="stats-item">
+              <b>{{ stats.done }}</b>
+              <span>已完成</span>
             </div>
           </div>
-          <div class="route-row">
-            <div class="route-marker marker-to"></div>
-            <div class="route-text">
-              <span class="route-tag tag-to">收货</span>
-              <p class="route-region">{{ region(order.carrierProvince, order.carrierCity, order.carrierArea) }}</p>
-              <p class="route-detail">{{ order.carrierAddress }}</p>
+        </section>
+
+        <!-- 状态筛选 -->
+        <nav class="filter-bar">
+          <button
+            v-for="tab in tabs"
+            :key="tab"
+            type="button"
+            class="filter-chip"
+            :class="{ active: activeTab === tab }"
+            @click="activeTab = tab"
+          >
+            {{ tab }}
+          </button>
+        </nav>
+
+        <!-- 运单列表 -->
+        <main class="order-list">
+          <p v-if="filteredOrders.length" class="list-count">共 {{ filteredOrders.length }} 条运单</p>
+
+          <article v-for="order in filteredOrders" :key="order.orderId" class="order-card">
+            <!-- 顶部：货主 + 状态 -->
+            <div class="card-head">
+              <span class="shipper-name">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" />
+                  <path d="M4.5 20c.9-3.2 3.7-5 7.5-5s6.6 1.8 7.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+                {{ order.shipperName }}
+              </span>
+              <span class="status-badge" :style="badgeStyle(order.status)">
+                {{ order.statusDesc || statusText(order.status) }}
+              </span>
             </div>
+
+            <!-- 路线：发货 / 收货地址 -->
+            <div class="route">
+              <div class="route-row">
+                <div class="route-marker marker-from"></div>
+                <div class="route-text">
+                  <span class="route-tag tag-from">发货</span>
+                  <p class="route-region">{{ region(order.shipperProvince, order.shipperCity, order.shipperArea) }}</p>
+                  <p class="route-detail">{{ order.shipperAddress }}</p>
+                </div>
+              </div>
+              <div class="route-row">
+                <div class="route-marker marker-to"></div>
+                <div class="route-text">
+                  <span class="route-tag tag-to">收货</span>
+                  <p class="route-region">{{ region(order.carrierProvince, order.carrierCity, order.carrierArea) }}</p>
+                  <p class="route-detail">{{ order.carrierAddress }}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 货物信息 -->
+            <div class="goods-row">
+              <span class="goods-chip">{{ order.goodsType }}</span>
+              <span class="goods-meta">{{ order.goodsDescription }}</span>
+              <span v-if="order.transportMoney != null" class="goods-meta goods-fee">¥ {{ order.transportMoney }}</span>
+            </div>
+
+            <!-- 底部：运单号 + 操作按钮（已成交可确认发货） -->
+            <footer class="card-foot">
+              <span class="grab-time">运单号 {{ order.orderId }}</span>
+              <div class="card-actions">
+                <button
+                  v-if="order.status === 3"
+                  type="button"
+                  class="action-btn action-primary"
+                  @click="openShipConfirm(order)"
+                >
+                  确认发货
+                </button>
+                <button type="button" class="action-btn action-plain" @click="openDetail(order)">查看详情</button>
+              </div>
+            </footer>
+          </article>
+
+          <!-- 首次加载中 -->
+          <div v-if="loading && !orderList.length" class="empty-state">
+            <p class="empty-title">运单加载中…</p>
+            <p class="empty-tip">正在实时获取您的已摘运单</p>
           </div>
-        </div>
 
-        <!-- 货物信息 -->
-        <div class="goods-row">
-          <span class="goods-chip">{{ order.goodsType }}</span>
-          <span class="goods-meta">{{ order.goodsDescription }}</span>
-          <span class="goods-meta goods-fee">¥ {{ order.transportMoney }}</span>
-        </div>
+          <!-- 加载失败（区别于无数据） -->
+          <div v-else-if="!loading && loadFailed && !orderList.length" class="empty-state">
+            <p class="empty-title">运单加载失败</p>
+            <p class="empty-tip">{{ loadErrorMsg }}</p>
+            <button type="button" class="retry-btn" @click="loadOrders">重新加载</button>
+          </div>
 
-        <!-- 底部：摘单时间 -->
-        <footer class="card-foot">
-          <span class="grab-time">摘单于 {{ order.grabTime }}</span>
-          <a class="call-link" :href="`tel:${order.shipperMobile}`">联系货主</a>
-        </footer>
-      </article>
-
-      <!-- 空状态 -->
-      <div v-if="!filteredOrders.length" class="empty-state">
-        <svg class="empty-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-          <rect x="6" y="16" width="38" height="26" rx="4" fill="#e5e7eb" />
-          <path d="M44 26h10a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H46a4 4 0 0 1-4-4v-6a6 6 0 0 0 2-6z" fill="#d1d5db" />
-          <circle cx="17" cy="48" r="5" fill="#cbd5e1" />
-          <circle cx="43" cy="48" r="5" fill="#cbd5e1" />
-          <path d="M6 16 10 6h30" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <p class="empty-title">暂无已摘运单</p>
-        <p class="empty-tip">去货源大厅摘一单，运单将显示在这里</p>
+          <!-- 空状态 -->
+          <div v-else-if="!filteredOrders.length" class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <rect x="6" y="16" width="38" height="26" rx="4" fill="#e5e7eb" />
+              <path d="M44 26h10a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H46a4 4 0 0 1-4-4v-6a6 6 0 0 0 2-6z" fill="#d1d5db" />
+              <circle cx="17" cy="48" r="5" fill="#cbd5e1" />
+              <circle cx="43" cy="48" r="5" fill="#cbd5e1" />
+              <path d="M6 16 10 6h30" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <p class="empty-title">暂无已摘运单</p>
+            <p class="empty-tip">去货源大厅摘一单，运单将显示在这里</p>
+          </div>
+        </main>
       </div>
-    </main>
+
+      <!-- ======= 详情页：整页切换查看，模式与样式对齐 publishOrderList 的「查看详情」 ======= -->
+      <div v-else key="detail" class="page-detail">
+        <template v-if="currentOrder">
+          <header class="detail-bar">
+            <button type="button" class="back-btn" aria-label="返回" @click="closeDetail">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <span class="detail-bar-title">运单详情</span>
+            <span class="detail-bar-right"></span>
+          </header>
+
+          <main class="detail-body">
+            <!-- 状态 + 路线概览 -->
+            <section class="detail-hero">
+              <div class="hero-head">
+                <span class="status-badge hero-status" :style="badgeStyle(currentOrder.status)">
+                  {{ currentOrder.statusDesc || statusText(currentOrder.status) }}
+                </span>
+                <span class="hero-time">{{ formatTime(currentOrder.createTime) }} 发布</span>
+              </div>
+              <div class="hero-route">
+                <span class="hero-city">{{ displayValue(currentOrder.shipperCity) }}</span>
+                <span class="hero-arrow">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M4 12h14m0 0-5-5m5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+                <span class="hero-city">{{ displayValue(currentOrder.carrierCity) }}</span>
+              </div>
+              <div class="hero-goods">
+                <span>{{ displayValue(currentOrder.goodsType) }}</span>
+                <span>{{ weightText(currentOrder) }}</span>
+                <span class="hero-fee">{{ formatMoney(currentOrder.transportMoney) }}</span>
+              </div>
+            </section>
+
+            <!-- 路线详情 -->
+            <section class="card-block">
+              <h3 class="block-title">运输路线</h3>
+              <div class="route-detail-list">
+                <div class="node">
+                  <div class="node-rail">
+                    <span class="node-dot from"></span>
+                  </div>
+                  <div class="node-body">
+                    <span class="node-tag tag-from">发货</span>
+                    <p class="node-region">{{ region(currentOrder.shipperProvince, currentOrder.shipperCity, currentOrder.shipperArea) }}</p>
+                    <p class="node-address">{{ displayValue(currentOrder.shipperAddress) }}</p>
+                    <p v-if="currentOrder.shipperName" class="node-contact">联系人：{{ currentOrder.shipperName }} {{ currentOrder.shipperMobile }}</p>
+                  </div>
+                </div>
+                <div class="node">
+                  <div class="node-rail">
+                    <span class="node-dot to"></span>
+                  </div>
+                  <div class="node-body">
+                    <span class="node-tag tag-to">收货</span>
+                    <p class="node-region">{{ region(currentOrder.carrierProvince, currentOrder.carrierCity, currentOrder.carrierArea) }}</p>
+                    <p class="node-address">{{ displayValue(currentOrder.carrierAddress) }}</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 货物信息 -->
+            <section class="card-block">
+              <h3 class="block-title">货物信息</h3>
+              <ul class="info-list">
+                <li class="info-item">
+                  <span class="info-label">物品类型</span>
+                  <span class="info-value">{{ displayValue(currentOrder.goodsType) }}</span>
+                </li>
+                <li class="info-item">
+                  <span class="info-label">物品描述</span>
+                  <span class="info-value">{{ displayValue(currentOrder.goodsDescription) }}</span>
+                </li>
+                <li class="info-item">
+                  <span class="info-label">物品重量</span>
+                  <span class="info-value">{{ weightText(currentOrder) }}</span>
+                </li>
+                <li class="info-item">
+                  <span class="info-label">运费</span>
+                  <span class="info-value fee">{{ formatMoney(currentOrder.transportMoney) }}</span>
+                </li>
+              </ul>
+            </section>
+
+            <!-- 订单信息 -->
+            <section class="card-block">
+              <h3 class="block-title">订单信息</h3>
+              <ul class="info-list">
+                <li class="info-item">
+                  <span class="info-label">运单编号</span>
+                  <span class="info-value">{{ displayValue(currentOrder.orderId) }}</span>
+                </li>
+                <li class="info-item">
+                  <span class="info-label">当前状态</span>
+                  <span class="info-value">{{ currentOrder.statusDesc || statusText(currentOrder.status) }}</span>
+                </li>
+                <li class="info-item">
+                  <span class="info-label">发布时间</span>
+                  <span class="info-value">{{ formatTime(currentOrder.createTime) }}</span>
+                </li>
+                <li class="info-item">
+                  <span class="info-label">货主</span>
+                  <span class="info-value">{{ displayValue(currentOrder.shipperName) }}</span>
+                </li>
+                <li class="info-item">
+                  <span class="info-label">货主电话</span>
+                  <span class="info-value">{{ displayValue(currentOrder.shipperMobile) }}</span>
+                </li>
+              </ul>
+            </section>
+
+            <p class="detail-tip">如对运单有疑问，请及时联系平台客服处理</p>
+          </main>
+        </template>
+      </div>
+    </Transition>
+
+    <!-- 确认发货弹框 -->
+    <div v-if="shipTarget" class="dialog-mask" @click.self="closeShipConfirm">
+      <div class="dialog-panel" role="dialog" aria-modal="true">
+        <h3 class="dialog-title">确认发货</h3>
+        <p class="dialog-tip">
+          运单 <b class="dialog-order-no">{{ shipTarget.orderId }}</b><br />
+          发货后将进入实际运输环节，是否确认已安排发货？
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="dialog-btn dialog-cancel" :disabled="shipping" @click="closeShipConfirm">再想想</button>
+          <button type="button" class="dialog-btn dialog-ok" :disabled="shipping" @click="submitShip">
+            {{ shipping ? '发货中…' : '确认发货' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 轻提示 -->
+    <Transition name="fade">
+      <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
+    </Transition>
   </div>
 </template>
 
@@ -306,8 +579,23 @@ function goBack() {
   box-shadow: 0 0 24px rgba(0, 0, 0, 0.06);
 }
 
+/* ===== 页面切换动画 ===== */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+
 /* ===== 顶部导航 ===== */
-.top-bar {
+.top-bar,
+.detail-bar {
   position: sticky;
   top: 0;
   z-index: 20;
@@ -534,7 +822,8 @@ function goBack() {
   background: $color-danger;
 }
 
-.route-tag {
+.route-tag,
+.node-tag {
   display: inline-block;
   padding: 1px 6px;
   border-radius: $radius-sm;
@@ -611,26 +900,49 @@ function goBack() {
 }
 
 .grab-time {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
   font-size: $font-size-xs;
   color: $text-muted;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.call-link {
+/* 卡片操作按钮组：确认发货（仅成交态）+ 查看详情 */
+.card-actions {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.action-btn {
   height: 30px;
-  padding: 6px $spacing-md;
+  padding: 0 $spacing-md;
   border-radius: $radius-full;
-  background: rgba($color-success, 0.1);
-  color: $color-success;
   font-size: $font-size-sm;
   font-weight: 600;
-  text-decoration: none;
+  line-height: 1;
   transition: $transition-base;
 
-  &:active {
-    background: $color-success;
-    color: #fff;
+  &:disabled {
+    opacity: 0.6;
   }
+
+  &:active {
+    opacity: 0.85;
+  }
+}
+
+.action-primary {
+  background: $color-success;
+  color: #fff;
+}
+
+.action-plain {
+  background: rgba($color-primary, 0.08);
+  color: $color-primary;
 }
 
 /* ===== 空状态 ===== */
@@ -661,5 +973,343 @@ function goBack() {
   margin-top: $spacing-xs;
   font-size: $font-size-sm;
   color: $text-muted;
+}
+
+.retry-btn {
+  margin-top: $spacing-md;
+  height: 32px;
+  padding: 0 $spacing-xl;
+  border-radius: $radius-full;
+  background: $color-primary;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  transition: $transition-base;
+
+  &:active {
+    opacity: 0.85;
+  }
+}
+
+/* ===== 详情页 ===== */
+.detail-bar {
+  justify-content: space-between;
+}
+
+.detail-bar-title {
+  font-size: $font-size-base;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.detail-bar-right {
+  width: 36px;
+}
+
+.detail-body {
+  padding: $spacing-md $spacing-md ($spacing-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+/* 状态 + 路线概览 */
+.detail-hero {
+  padding: $spacing-lg;
+  border-radius: $radius-lg;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  box-shadow: $shadow-md;
+}
+
+.hero-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  .hero-status {
+    font-size: $font-size-sm;
+  }
+}
+
+.hero-time {
+  font-size: $font-size-xs;
+  opacity: 0.9;
+}
+
+.hero-route {
+  margin: $spacing-lg 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-md;
+}
+
+.hero-city {
+  font-size: $font-size-xl;
+  font-weight: 700;
+}
+
+.hero-arrow {
+  color: rgba(255, 255, 255, 0.7);
+
+  svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+.hero-goods {
+  display: flex;
+  justify-content: center;
+  gap: $spacing-lg;
+  font-size: $font-size-sm;
+  opacity: 0.95;
+}
+
+.hero-fee {
+  font-weight: 700;
+}
+
+/* 信息卡片 */
+.card-block {
+  background: $bg-card;
+  border-radius: $radius-lg;
+  padding: $spacing-md $spacing-lg;
+  box-shadow: $shadow-sm;
+}
+
+.block-title {
+  position: relative;
+  padding-left: 12px;
+  font-size: $font-size-base;
+  font-weight: 600;
+  color: $text-primary;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 14px;
+    border-radius: 2px;
+    background: $color-primary;
+  }
+}
+
+/* 路线详情（详情页） */
+.route-detail-list {
+  margin-top: $spacing-md;
+  position: relative;
+}
+
+.node {
+  display: flex;
+}
+
+.node + .node::before {
+  content: '';
+  flex-shrink: 0;
+  width: 22px;
+}
+
+.node + .node .node-rail::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -24px;
+  height: 24px;
+  border-left: 2px dashed $border-color;
+  transform: translateX(-1px);
+}
+
+.node-rail {
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.node-dot {
+  margin-top: 5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-sizing: border-box;
+
+  &.from {
+    background: $color-primary;
+    border: 3px solid rgba($color-primary, 0.25);
+  }
+
+  &.to {
+    background: $color-danger;
+    border: 3px solid rgba($color-danger, 0.25);
+  }
+}
+
+.node-body {
+  flex: 1;
+  padding-left: $spacing-sm;
+  padding-bottom: $spacing-lg;
+}
+
+.node-region {
+  margin-top: $spacing-xs;
+  font-size: $font-size-base;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.node-address {
+  margin-top: 2px;
+  font-size: $font-size-sm;
+  color: $text-secondary;
+}
+
+.node-contact {
+  margin-top: $spacing-xs;
+  font-size: $font-size-sm;
+  color: $text-primary;
+  background: $bg-page;
+  display: inline-block;
+  padding: 2px $spacing-sm;
+  border-radius: $radius-sm;
+}
+
+/* 信息行 */
+.info-list {
+  margin-top: $spacing-sm;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  gap: $spacing-lg;
+  padding: $spacing-sm 0;
+  font-size: $font-size-sm;
+
+  & + & {
+    border-top: 1px dashed $border-color;
+  }
+}
+
+.info-label {
+  flex-shrink: 0;
+  color: $text-secondary;
+}
+
+.info-value {
+  text-align: right;
+  color: $text-primary;
+  word-break: break-all;
+
+  &.fee {
+    color: $color-warning;
+    font-weight: 700;
+  }
+}
+
+.detail-tip {
+  text-align: center;
+  font-size: $font-size-xs;
+  color: $text-muted;
+}
+
+/* ===== 确认发货弹框 ===== */
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.dialog-panel {
+  width: 100%;
+  max-width: 340px;
+  padding: $spacing-xl $spacing-lg $spacing-lg;
+  background: $bg-card;
+  border-radius: $radius-lg;
+  text-align: center;
+}
+
+.dialog-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.dialog-tip {
+  margin-top: $spacing-sm;
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  line-height: 1.7;
+}
+
+.dialog-order-no {
+  color: $color-primary;
+}
+
+.dialog-actions {
+  margin-top: $spacing-lg;
+  display: flex;
+  gap: $spacing-sm;
+}
+
+.dialog-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: $radius-full;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  transition: $transition-base;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.dialog-cancel {
+  background: rgba(0, 0, 0, 0.05);
+  color: $text-secondary;
+}
+
+.dialog-ok {
+  background: $color-success;
+  color: #fff;
+}
+
+/* ===== 轻提示 ===== */
+.toast {
+  position: fixed;
+  left: 50%;
+  top: 45%;
+  z-index: 80;
+  transform: translateX(-50%);
+  max-width: 80%;
+  padding: 10px $spacing-xl;
+  border-radius: $radius-full;
+  background: rgba(17, 24, 39, 0.85);
+  color: #fff;
+  font-size: $font-size-sm;
+  text-align: center;
+}
+
+/* ===== 过渡 ===== */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

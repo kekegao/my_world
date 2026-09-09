@@ -133,6 +133,19 @@ export function querySourceOrderList(params: SourceOrderQueryParams = {}) {
   return post('/api/accept/list', params)
 }
 
+/** 承运端「我的运单」查询参数：订单状态列表（IN 查询）等，承运方身份由后端从登录态获取 */
+export interface CarrierOrderQueryParams {
+  /** 订单状态（选填，单值精确匹配） */
+  status?: number
+  /** 订单状态列表（选填，IN 查询，优先于 status） */
+  statusList?: number[]
+}
+
+/** 承运端「我的运单」：实时查询当前承运方所有已摘的运单 */
+export function queryCarrierOrders(params: CarrierOrderQueryParams = {}) {
+  return post('/api/accept/myOrders', params)
+}
+
 /** 摘单（抢单）请求参数 */
 export interface AcceptOrderParams {
   /** 运单号 */
@@ -144,10 +157,15 @@ export function carrierAcceptOrder(data: AcceptOrderParams) {
   return post('/api/accept/acceptOrder', data)
 }
 
-/** 货主端运单操作请求参数 */
+/** 运单操作请求参数（货主成交/取消、承运方发货共用） */
 export interface OrderOperateParams {
   /** 运单号 */
   orderId: string
+}
+
+/** 承运方确认发货：成交(3) -> 发货(4)，后端校验仅承运方本人可操作 */
+export function carrierShipOrder(data: OrderOperateParams) {
+  return post('/api/accept/shipOrder', data)
 }
 
 /** 货主确认成交：摘单(2) -> 成交(3) */
