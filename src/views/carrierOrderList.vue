@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { carrierShipOrder, queryCarrierOrders } from '@/api/modules/order'
+import { carrierConfirmReceipt, carrierShipOrder, queryCarrierOrders } from '@/api/modules/order'
 
 const router = useRouter()
 
@@ -236,6 +236,50 @@ async function submitShip() {
   }
 }
 
+/* ===== 确认收货：发货(4) -> 确认收货(5)，后端校验仅承运方本人 ===== */
+/** 待确认收货的运单 */
+const receiveTarget = ref<MyOrderItem | null>(null)
+const receiving = ref(false)
+
+function openReceiveConfirm(order: MyOrderItem) {
+  receiveTarget.value = order
+}
+
+function closeReceiveConfirm() {
+  if (receiving.value) return
+  receiveTarget.value = null
+}
+
+/** 提交确认收货，成功后刷新列表 */
+async function submitReceive() {
+  const order = receiveTarget.value
+  if (!order || receiving.value) return
+  receiving.value = true
+  let succeeded = false
+  try {
+    const res = (await carrierConfirmReceipt({ orderId: order.orderId })) as {
+      success?: boolean
+      code?: string | number
+      message?: string
+    }
+    if (res && (res.success === true || String(res.code) === '200')) {
+      succeeded = true
+    } else {
+      showToast(res?.message || '确认收货失败，请稍后重试')
+    }
+  } catch (err) {
+    console.error('确认收货失败：', err)
+    showToast('网络异常，请稍后重试')
+  } finally {
+    receiving.value = false
+    if (succeeded) {
+      receiveTarget.value = null
+      showToast('已确认收货')
+      loadOrders()
+    }
+  }
+}
+
 /* ===== 轻提示 ===== */
 const toastMsg = ref('')
 let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -379,7 +423,7 @@ function goBack() {
               <span v-if="order.transportMoney != null" class="goods-meta goods-fee">¥ {{ order.transportMoney }}</span>
             </div>
 
-            <!-- 底部：运单号 + 操作按钮（已成交可确认发货） -->
+            <!-- 底部：运单号 + 操作按钮（成交态可确认发货，发货态可确认收货） -->
             <footer class="card-foot">
               <span class="grab-time">运单号 {{ order.orderId }}</span>
               <div class="card-actions">
@@ -390,6 +434,14 @@ function goBack() {
                   @click="openShipConfirm(order)"
                 >
                   确认发货
+                </button>
+                <button
+                  v-else-if="order.status === 4"
+                  type="button"
+                  class="action-btn action-primary"
+                  @click="openReceiveConfirm(order)"
+                >
+                  确认收货
                 </button>
                 <button type="button" class="action-btn action-plain" @click="openDetail(order)">查看详情</button>
               </div>
@@ -558,6 +610,23 @@ function goBack() {
           <button type="button" class="dialog-btn dialog-cancel" :disabled="shipping" @click="closeShipConfirm">再想想</button>
           <button type="button" class="dialog-btn dialog-ok" :disabled="shipping" @click="submitShip">
             {{ shipping ? '发货中…' : '确认发货' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 确认收货弹框 -->
+    <div v-if="receiveTarget" class="dialog-mask" @click.self="closeReceiveConfirm">
+      <div class="dialog-panel" role="dialog" aria-modal="true">
+        <h3 class="dialog-title">确认收货</h3>
+        <p class="dialog-tip">
+          运单 <b class="dialog-order-no">{{ receiveTarget.orderId }}</b><br />
+          确认收货后运单将进入回单确认环节，是否确认货物已送达？
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="dialog-btn dialog-cancel" :disabled="receiving" @click="closeReceiveConfirm">再想想</button>
+          <button type="button" class="dialog-btn dialog-ok" :disabled="receiving" @click="submitReceive">
+            {{ receiving ? '提交中…' : '确认收货' }}
           </button>
         </div>
       </div>
@@ -909,7 +978,7 @@ function goBack() {
   white-space: nowrap;
 }
 
-/* 卡片操作按钮组：确认发货（仅成交态）+ 查看详情 */
+/* 卡片操作按钮组：确认发货（成交3）/ 确认收货（发货4）+ 查看详情 */
 .card-actions {
   flex-shrink: 0;
   display: flex;

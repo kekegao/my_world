@@ -168,6 +168,11 @@ export function carrierShipOrder(data: OrderOperateParams) {
   return post('/api/accept/shipOrder', data)
 }
 
+/** 确认收货：发货(4) -> 确认收货(5)，后端校验仅该运单本人可操作 */
+export function carrierConfirmReceipt(data: OrderOperateParams) {
+  return post('/api/accept/confirmReceipt', data)
+}
+
 /** 货主确认成交：摘单(2) -> 成交(3) */
 export function dealPublishOrder(data: OrderOperateParams) {
   return post('/api/publishOrder/dealOrder', data)
@@ -176,4 +181,9 @@ export function dealPublishOrder(data: OrderOperateParams) {
 /** 货主取消承运方摘单：摘单(2) -> 发布(1)，恢复等待摘单 */
 export function cancelPublishOrderAccept(data: OrderOperateParams) {
   return post('/api/publishOrder/cancelAccept', data)
+}
+
+/** 货主回单确认：确认收货(5) -> 回单确认(6)，成功后释放承运方发货保证金 */
+export function receiptConfirmOrder(data: OrderOperateParams) {
+  return post('/api/publishOrder/receiptConfirm', data)
 }

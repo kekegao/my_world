@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { cancelPublishOrderAccept, dealPublishOrder, queryPublishOrderList, type PublishedOrderItem } from '@/api/modules/order'
+import { cancelPublishOrderAccept, dealPublishOrder, queryPublishOrderList, receiptConfirmOrder, type PublishedOrderItem } from '@/api/modules/order'
 
 const router = useRouter()
 
@@ -82,26 +82,48 @@ onMounted(async () => {
   allOrders.value = orderList.value
 })
 
-/* ===== 已摘单运单：成交 / 取消摘单 ===== */
+/* ===== 运单流转操作：成交 / 取消摘单 / 回单确认 ===== */
 
-/** 二次确认弹框操作类型：deal=确认成交，cancel=取消承运方摘单 */
-type ConfirmAction = 'deal' | 'cancel'
+/** 二次确认弹框操作类型：deal=确认成交，cancel=取消承运方摘单，receipt=回单确认 */
+type ConfirmAction = 'deal' | 'cancel' | 'receipt'
 const confirmDialog = ref<{ action: ConfirmAction; order: OrderRow } | null>(null)
 /** 请求进行中标记，防止连点重复提交 */
 const confirming = ref(false)
 
-/** 弹框标题与主按钮文案 */
-const confirmTitle = computed(() => (confirmDialog.value?.action === 'deal' ? '确认成交' : '取消摘单'))
-const confirmBtnText = computed(() => (confirmDialog.value?.action === 'deal' ? '确认成交' : '确认取消'))
+/** 弹框标题 */
+const CONFIRM_TITLE: Record<ConfirmAction, string> = {
+  deal: '确认成交',
+  cancel: '取消摘单',
+  receipt: '回单确认',
+}
+/** 弹框主按钮文案 */
+const CONFIRM_BTN_TEXT: Record<ConfirmAction, string> = {
+  deal: '确认成交',
+  cancel: '确认取消',
+  receipt: '确认回单',
+}
+/** 操作失败兜底提示 */
+const CONFIRM_FAIL_TEXT: Record<ConfirmAction, string> = {
+  deal: '成交失败，请稍后重试',
+  cancel: '取消摘单失败，请稍后重试',
+  receipt: '回单确认失败，请稍后重试',
+}
+
+const confirmTitle = computed(() => (confirmDialog.value ? CONFIRM_TITLE[confirmDialog.value.action] : ''))
+const confirmBtnText = computed(() => (confirmDialog.value ? CONFIRM_BTN_TEXT[confirmDialog.value.action] : ''))
 
 /** 弹框提示文案：给出承运方与操作后果 */
 const confirmTip = computed(() => {
   const d = confirmDialog.value
   if (!d) return ''
   const carrier = d.order.carrierName || d.order.carrierUserName || '该承运方'
-  return d.action === 'deal'
-    ? `是否确认与「${carrier}」成交该运单？成交后双方进入履约阶段，运费仍托管于平台。`
-    : `是否取消「${carrier}」的摘单？取消后运单将恢复为待接单，重新进入货源大厅。`
+  if (d.action === 'deal') {
+    return `是否确认与「${carrier}」成交该运单？成交后双方进入履约阶段，运费仍托管于平台。`
+  }
+  if (d.action === 'receipt') {
+    return `是否确认运单「${d.order.orderId}」的回单？确认后运单履约完成，承运方发货保证金将解冻退回。`
+  }
+  return `是否取消「${carrier}」的摘单？取消后运单将恢复为待接单，重新进入货源大厅。`
 })
 
 function openConfirm(action: ConfirmAction, order: OrderRow) {
@@ -123,15 +145,20 @@ function patchOrderLocal(orderId: string, patch: Partial<OrderRow>) {
 }
 
 /**
- * 提交二次确认操作：调后端实时成交 / 取消摘单。
- * POST /api/publishOrder/dealOrder | /api/publishOrder/cancelAccept
+ * 提交二次确认操作：调后端实时成交 / 取消摘单 / 回单确认。
+ * POST /api/publishOrder/dealOrder | /api/publishOrder/cancelAccept | /api/publishOrder/receiptConfirm
  */
 async function submitConfirm() {
   const d = confirmDialog.value
   if (!d || confirming.value) return
   confirming.value = true
   try {
-    const api = d.action === 'deal' ? dealPublishOrder : cancelPublishOrderAccept
+    const apiMap = {
+      deal: dealPublishOrder,
+      cancel: cancelPublishOrderAccept,
+      receipt: receiptConfirmOrder,
+    } as const
+    const api = apiMap[d.action]
     const res = (await api({ orderId: d.order.orderId })) as {
       success?: boolean
       code?: string | number
@@ -141,16 +168,19 @@ async function submitConfirm() {
       if (d.action === 'deal') {
         patchOrderLocal(d.order.orderId, { status: 3, statusDesc: '成交' })
         showToast('成交成功，订单进入履约阶段')
-      } else {
+      } else if (d.action === 'cancel') {
         patchOrderLocal(d.order.orderId, { status: 1, statusDesc: '发布' })
         showToast('已取消摘单，运单恢复为待接单')
+      } else {
+        patchOrderLocal(d.order.orderId, { status: 6, statusDesc: '回单确认' })
+        showToast('回单确认成功，承运方发货保证金已解冻')
       }
       confirmDialog.value = null
     } else {
-      showToast(res?.message || (d.action === 'deal' ? '成交失败，请稍后重试' : '取消摘单失败，请稍后重试'))
+      showToast(res?.message || CONFIRM_FAIL_TEXT[d.action])
     }
   } catch (err) {
-    console.error('成交/取消摘单失败：', err)
+    console.error('运单流转操作失败：', err)
     showToast('网络异常，请稍后重试')
   } finally {
     confirming.value = false
@@ -376,7 +406,7 @@ function goPublish() {
               <span class="goods-meta goods-fee">{{ formatMoney(order.transportMoney) }}</span>
             </div>
 
-            <!-- 底部：时间 + 操作（已摘单可成交/取消） -->
+            <!-- 底部：时间 + 操作（已摘单可成交/取消，确认收货后可回单确认） -->
             <footer class="card-foot">
               <span class="publish-time">{{ formatTime(order.createTime) }}</span>
               <div class="card-actions">
@@ -385,6 +415,15 @@ function goPublish() {
                   <button type="button" class="op-btn deal-btn" @click="openConfirm('deal', order)">成交</button>
                   <button type="button" class="op-btn cancel-btn" @click="openConfirm('cancel', order)">取消</button>
                 </template>
+                <!-- 确认收货(5)：货主可回单确认，确认后释放承运方发货保证金 -->
+                <button
+                  v-else-if="order.status === 5"
+                  type="button"
+                  class="op-btn receipt-btn"
+                  @click="openConfirm('receipt', order)"
+                >
+                  回单确认
+                </button>
                 <button type="button" class="detail-btn" @click="openDetail(order)">查看详情</button>
               </div>
             </footer>
@@ -541,7 +580,7 @@ function goPublish() {
       </div>
     </Transition>
 
-    <!-- 二次确认弹框：成交 / 取消摘单 -->
+    <!-- 二次确认弹框：成交 / 取消摘单 / 回单确认 -->
     <div v-if="confirmDialog" class="dialog-mask" @click.self="closeConfirm">
       <div class="dialog-panel" role="dialog" aria-modal="true">
         <h3 class="dialog-title">{{ confirmTitle }}</h3>
@@ -1226,6 +1265,18 @@ function goPublish() {
 
   &:active {
     background: $color-danger;
+    color: #fff;
+  }
+}
+
+/* 回单确认：主色描边，表示履约收尾动作 */
+.receipt-btn {
+  background: rgba($color-primary, 0.08);
+  border: 1px solid rgba($color-primary, 0.35);
+  color: $color-primary;
+
+  &:active {
+    background: $color-primary;
     color: #fff;
   }
 }
